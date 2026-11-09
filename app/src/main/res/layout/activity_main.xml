@@ -3,24 +3,40 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:background="#99000000"
-    android:padding="16dp">
+    android:background="#66000000"
+    android:paddingLeft="24dp"
+    android:paddingRight="24dp"
+    android:paddingTop="48dp"
+    android:paddingBottom="16dp">
 
-    <TextView
+    <TextClock
+        android:id="@+id/textClock"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="Tinku Glass Launcher"
+        android:format12Hour="h:mm"
+        android:format24Hour="HH:mm"
         android:textColor="#FFFFFF"
-        android:textSize="22sp"
-        android:textStyle="bold"
-        android:gravity="center"
-        android:layout_marginBottom="16dp"/>
+        android:textSize="64sp"
+        android:fontFamily="sans-serif-light"
+        android:gravity="right"/>
+
+    <TextClock
+        android:id="@+id/textDate"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:format12Hour="EEEE, d MMMM"
+        android:format24Hour="EEEE, d MMMM"
+        android:textColor="#CCFFFFFF"
+        android:textSize="16sp"
+        android:gravity="right"
+        android:layout_marginBottom="24dp"/>
 
     <ListView
         android:id="@+id/listViewApps"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:divider="@null"
-        android:dividerHeight="0dp"/>
+        android:dividerHeight="0dp"
+        android:scrollbars="none"/>
 
 </LinearLayout>
