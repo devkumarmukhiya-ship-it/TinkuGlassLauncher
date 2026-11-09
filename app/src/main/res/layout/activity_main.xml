@@ -1,42 +1,96 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
-    android:layout_height="match_parent"
-    android:orientation="vertical"
-    android:background="#66000000"
-    android:paddingLeft="24dp"
-    android:paddingRight="24dp"
-    android:paddingTop="48dp"
-    android:paddingBottom="16dp">
+    android:layout_height="match_parent">
 
-    <TextClock
-        android:id="@+id/textClock"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:format12Hour="h:mm"
-        android:format24Hour="HH:mm"
-        android:textColor="#FFFFFF"
-        android:textSize="64sp"
-        android:fontFamily="sans-serif-light"
-        android:gravity="right"/>
-
-    <TextClock
-        android:id="@+id/textDate"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:format12Hour="EEEE, d MMMM"
-        android:format24Hour="EEEE, d MMMM"
-        android:textColor="#CCFFFFFF"
-        android:textSize="16sp"
-        android:gravity="right"
-        android:layout_marginBottom="24dp"/>
-
-    <ListView
-        android:id="@+id/listViewApps"
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:divider="@null"
-        android:dividerHeight="0dp"
-        android:scrollbars="none"/>
+        android:orientation="vertical"
+        android:background="#66000000"
+        android:paddingLeft="24dp"
+        android:paddingRight="8dp"
+        android:paddingTop="48dp"
+        android:paddingBottom="16dp">
 
-</LinearLayout>
+        <TextClock
+            android:id="@+id/textClock"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:format12Hour="h:mm"
+            android:format24Hour="HH:mm"
+            android:textColor="#FFFFFF"
+            android:textSize="64sp"
+            android:fontFamily="sans-serif-light"
+            android:gravity="right"
+            android:paddingRight="24dp"/>
+
+        <TextClock
+            android:id="@+id/textDate"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:format12Hour="EEEE, d MMMM"
+            android:format24Hour="EEEE, d MMMM"
+            android:textColor="#CCFFFFFF"
+            android:textSize="16sp"
+            android:gravity="right"
+            android:paddingRight="24dp"
+            android:layout_marginBottom="24dp"/>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:orientation="horizontal">
+
+            <ListView
+                android:id="@+id/listViewApps"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:divider="@null"
+                android:dividerHeight="0dp"
+                android:scrollbars="none"/>
+
+            <LinearLayout
+                android:id="@+id/alphabetBar"
+                android:layout_width="28dp"
+                android:layout_height="match_parent"
+                android:orientation="vertical"
+                android:gravity="center"/>
+
+        </LinearLayout>
+    </LinearLayout>
+
+    <FrameLayout
+        android:id="@+id/letterOverlay"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_marginRight="36dp"
+        android:background="#E6101414"
+        android:visibility="gone"
+        android:paddingLeft="24dp"
+        android:paddingRight="12dp"
+        android:paddingTop="48dp"
+        android:paddingBottom="16dp">
+
+        <TextView
+            android:id="@+id/textLetter"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="top|left"
+            android:textColor="#66FFFFFF"
+            android:textSize="72sp"
+            android:fontFamily="sans-serif-thin"/>
+
+        <ListView
+            android:id="@+id/listViewLetter"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center_vertical"
+            android:divider="@null"
+            android:dividerHeight="0dp"
+            android:scrollbars="none"/>
+
+    </FrameLayout>
+
+</FrameLayout>

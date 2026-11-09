@@ -15,11 +15,17 @@ public class AppAdapter extends BaseAdapter {
     private Context context;
     private List<ResolveInfo> apps;
     private PackageManager pm;
+    private int layoutRes;
 
     public AppAdapter(Context context, List<ResolveInfo> apps) {
+        this(context, apps, R.layout.item_app);
+    }
+
+    public AppAdapter(Context context, List<ResolveInfo> apps, int layoutRes) {
         this.context = context;
         this.apps = apps;
         this.pm = context.getPackageManager();
+        this.layoutRes = layoutRes;
     }
 
     @Override
@@ -40,7 +46,7 @@ public class AppAdapter extends BaseAdapter {
     @Override
     public View getView(int position, View convertView, ViewGroup parent) {
         if (convertView == null) {
-            convertView = LayoutInflater.from(context).inflate(R.layout.item_app, parent, false);
+            convertView = LayoutInflater.from(context).inflate(layoutRes, parent, false);
         }
 
         ResolveInfo info = apps.get(position);
