@@ -7,13 +7,11 @@
 
     <LinearLayout
         android:id="@+id/favoritesBox"
-        android:layout_width="match_parent"
+        android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_gravity="bottom"
+        android:layout_gravity="top|left"
         android:orientation="vertical"
-        android:paddingLeft="28dp"
-        android:paddingRight="44dp"
-        android:paddingBottom="100dp"/>
+        android:padding="8dp"/>
 
     <LinearLayout
         android:id="@+id/clockBox"
@@ -49,20 +47,21 @@
 
     <LinearLayout
         android:id="@+id/alphabetBar"
-        android:layout_width="28dp"
-        android:layout_height="match_parent"
-        android:layout_gravity="right"
+        android:layout_width="56dp"
+        android:layout_height="wrap_content"
+        android:layout_gravity="right|bottom"
+        android:layout_marginBottom="110dp"
         android:orientation="vertical"
-        android:gravity="center"
-        android:paddingTop="48dp"
-        android:paddingBottom="16dp"/>
+        android:gravity="center_horizontal"
+        android:paddingTop="6dp"
+        android:paddingBottom="6dp"/>
 
     <ImageView
         android:id="@+id/searchButton"
         android:layout_width="56dp"
         android:layout_height="56dp"
         android:layout_gravity="bottom|right"
-        android:layout_marginRight="44dp"
+        android:layout_marginRight="84dp"
         android:layout_marginBottom="28dp"
         android:padding="15dp"
         android:src="@android:drawable/ic_menu_search"/>
@@ -71,7 +70,7 @@
         android:id="@+id/letterOverlay"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:layout_marginRight="36dp"
+        android:layout_marginRight="56dp"
         android:background="#CC000000"
         android:visibility="gone"
         android:paddingLeft="28dp"
@@ -92,7 +91,7 @@
             android:id="@+id/listViewLetter"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
-            android:layout_marginTop="96dp"
+            android:layout_marginTop="0dp"
             android:divider="@null"
             android:dividerHeight="0dp"
             android:scrollbars="none"/>
@@ -104,6 +103,7 @@
         android:layout_height="match_parent"
         android:orientation="vertical"
         android:background="#E6000000"
+        android:clickable="true"
         android:visibility="gone"
         android:paddingLeft="28dp"
         android:paddingRight="28dp"
