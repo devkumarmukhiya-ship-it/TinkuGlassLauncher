@@ -1,0 +1,9 @@
+build/
+app/build/
+.gradle/
+*.apk
+local.properties
+.idea/
+gradle-8.5-bin.zip
+gradle_bin/
+build_temp/
