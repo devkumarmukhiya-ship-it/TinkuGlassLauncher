@@ -14,7 +14,7 @@
         android:label="Tinku Glass Launcher"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
-        android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
+        android:theme="@android:style/Theme.DeviceDefault.Wallpaper.NoTitleBar">
 
         <activity
             android:name=".MainActivity"

@@ -15,8 +15,10 @@ import android.view.MotionEvent;
 import android.view.View;
 import android.widget.AdapterView;
 import android.widget.FrameLayout;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ListView;
+import android.widget.TextClock;
 import android.widget.TextView;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -26,13 +28,17 @@ import java.util.List;
 import java.util.Set;
 
 public class MainActivity extends Activity {
-    private ListView listView;
     private ListView listViewLetter;
     private LinearLayout alphabetBar;
+    private LinearLayout homeBox;
+    private LinearLayout clockBox;
     private LinearLayout favoritesBox;
+    private View spacer;
+    private TextClock textClock;
+    private TextClock textDate;
     private FrameLayout letterOverlay;
     private TextView textLetter;
-    private List<ResolveInfo> installedApps;
+    private List<ResolveInfo> installedApps = new ArrayList<ResolveInfo>();
     private List<ResolveInfo> letterApps = new ArrayList<ResolveInfo>();
     private AppAdapter letterAdapter;
     private PackageManager pm;
@@ -45,29 +51,19 @@ public class MainActivity extends Activity {
         setContentView(R.layout.activity_main);
 
         prefs = getSharedPreferences("tinku", MODE_PRIVATE);
-        listView = findViewById(R.id.listViewApps);
+        pm = getPackageManager();
         listViewLetter = findViewById(R.id.listViewLetter);
         alphabetBar = findViewById(R.id.alphabetBar);
+        homeBox = findViewById(R.id.homeBox);
+        clockBox = findViewById(R.id.clockBox);
         favoritesBox = findViewById(R.id.favoritesBox);
+        spacer = findViewById(R.id.spacer);
+        textClock = findViewById(R.id.textClock);
+        textDate = findViewById(R.id.textDate);
         letterOverlay = findViewById(R.id.letterOverlay);
         textLetter = findViewById(R.id.textLetter);
-        pm = getPackageManager();
 
         loadApps();
-
-        listView.setOnItemClickListener(new AdapterView.OnItemClickListener() {
-            @Override
-            public void onItemClick(AdapterView<?> parent, View view, int position, long id) {
-                launchApp(installedApps.get(position));
-            }
-        });
-        listView.setOnItemLongClickListener(new AdapterView.OnItemLongClickListener() {
-            @Override
-            public boolean onItemLongClick(AdapterView<?> parent, View view, int position, long id) {
-                showMenu(installedApps.get(position));
-                return true;
-            }
-        });
 
         letterAdapter = new AppAdapter(this, letterApps, R.layout.item_app_icon);
         listViewLetter.setAdapter(letterAdapter);
@@ -85,7 +81,6 @@ public class MainActivity extends Activity {
                 return true;
             }
         });
-
         letterOverlay.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -93,15 +88,30 @@ public class MainActivity extends Activity {
             }
         });
 
+        View.OnLongClickListener clockLong = new View.OnLongClickListener() {
+            @Override
+            public boolean onLongClick(View v) {
+                showClockMenu();
+                return true;
+            }
+        };
+        clockBox.setOnLongClickListener(clockLong);
+        textClock.setOnLongClickListener(clockLong);
+        textDate.setOnLongClickListener(clockLong);
+
         setupAlphabetBar();
-        refreshFavorites();
+        applyLayout();
     }
 
     @Override
     protected void onResume() {
         super.onResume();
         loadApps();
-        refreshFavorites();
+        applyLayout();
+    }
+
+    private int dp(int v) {
+        return (int) (v * getResources().getDisplayMetrics().density);
     }
 
     private void loadApps() {
@@ -117,7 +127,6 @@ public class MainActivity extends Activity {
                 );
             }
         });
-        listView.setAdapter(new AppAdapter(this, installedApps));
     }
 
     private Set<String> getFavorites() {
@@ -128,34 +137,96 @@ public class MainActivity extends Activity {
         prefs.edit().putStringSet("favs", favs).apply();
     }
 
+    private boolean isLeft() {
+        return "left".equals(prefs.getString("align", "left"));
+    }
+
+    private void applyLayout() {
+        int g = isLeft() ? Gravity.LEFT : Gravity.RIGHT;
+        textClock.setGravity(g);
+        textDate.setGravity(g);
+        boolean top = "top".equals(prefs.getString("vert", "bottom"));
+        homeBox.removeAllViews();
+        if (top) {
+            homeBox.addView(clockBox);
+            homeBox.addView(spacer);
+            homeBox.addView(favoritesBox);
+        } else {
+            homeBox.addView(spacer);
+            homeBox.addView(clockBox);
+            homeBox.addView(favoritesBox);
+        }
+        refreshFavorites();
+    }
+
+    private void showClockMenu() {
+        String[] options = new String[] { "Left", "Right", "Top", "Bottom" };
+        new AlertDialog.Builder(this)
+            .setTitle("Clock position")
+            .setItems(options, new DialogInterface.OnClickListener() {
+                @Override
+                public void onClick(DialogInterface dialog, int which) {
+                    SharedPreferences.Editor e = prefs.edit();
+                    if (which == 0) e.putString("align", "left");
+                    else if (which == 1) e.putString("align", "right");
+                    else if (which == 2) e.putString("vert", "top");
+                    else e.putString("vert", "bottom");
+                    e.apply();
+                    applyLayout();
+                }
+            })
+            .show();
+    }
+
     private void refreshFavorites() {
         favoritesBox.removeAllViews();
         Set<String> favs = getFavorites();
+        boolean left = isLeft();
         for (int i = 0; i < installedApps.size(); i++) {
             final ResolveInfo info = installedApps.get(i);
-            if (favs.contains(info.activityInfo.packageName)) {
-                TextView tv = new TextView(this);
-                tv.setText(info.loadLabel(pm));
-                tv.setTextColor(0xFFFFFFFF);
-                tv.setTextSize(28);
-                tv.setTypeface(android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL));
-                tv.setGravity(Gravity.RIGHT);
-                tv.setPadding(0, 8, 0, 8);
-                tv.setOnClickListener(new View.OnClickListener() {
-                    @Override
-                    public void onClick(View v) {
-                        launchApp(info);
-                    }
-                });
-                tv.setOnLongClickListener(new View.OnLongClickListener() {
-                    @Override
-                    public boolean onLongClick(View v) {
-                        showMenu(info);
-                        return true;
-                    }
-                });
-                favoritesBox.addView(tv);
+            if (!favs.contains(info.activityInfo.packageName)) continue;
+
+            LinearLayout row = new LinearLayout(this);
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            row.setGravity(Gravity.CENTER_VERTICAL | (left ? Gravity.LEFT : Gravity.RIGHT));
+            row.setPadding(0, dp(8), 0, dp(8));
+
+            ImageView iv = new ImageView(this);
+            iv.setImageDrawable(info.loadIcon(pm));
+            LinearLayout.LayoutParams ilp = new LinearLayout.LayoutParams(dp(48), dp(48));
+
+            TextView tv = new TextView(this);
+            tv.setText(info.loadLabel(pm));
+            tv.setTextColor(0xFFFFFFFF);
+            tv.setTextSize(22);
+            tv.setShadowLayer(6, 0, 0, 0x88000000);
+            tv.setSingleLine(true);
+
+            if (left) {
+                tv.setPadding(dp(16), 0, 0, 0);
+                row.addView(iv, ilp);
+                row.addView(tv);
+            } else {
+                tv.setPadding(0, 0, dp(16), 0);
+                row.addView(tv);
+                row.addView(iv, ilp);
             }
+
+            row.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    launchApp(info);
+                }
+            });
+            row.setOnLongClickListener(new View.OnLongClickListener() {
+                @Override
+                public boolean onLongClick(View v) {
+                    showMenu(info);
+                    return true;
+                }
+            });
+            favoritesBox.addView(row, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
         }
     }
 
@@ -163,7 +234,7 @@ public class MainActivity extends Activity {
         final String pkg = info.activityInfo.packageName;
         final boolean isFav = getFavorites().contains(pkg);
         String[] options = new String[] {
-            isFav ? "Unpin" : "Pin to top",
+            isFav ? "Remove from favourites" : "Favourite",
             "App info",
             "Uninstall"
         };
@@ -181,7 +252,7 @@ public class MainActivity extends Activity {
                         Intent i = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
                         i.setData(Uri.parse("package:" + pkg));
                         startActivity(i);
-                    } else if (which == 2) {
+                    } else {
                         Intent i = new Intent(Intent.ACTION_DELETE);
                         i.setData(Uri.parse("package:" + pkg));
                         startActivity(i);
@@ -204,8 +275,9 @@ public class MainActivity extends Activity {
         for (int i = 0; i < letters.length(); i++) {
             TextView tv = new TextView(this);
             tv.setText(String.valueOf(letters.charAt(i)));
-            tv.setTextColor(0xCCFFFFFF);
+            tv.setTextColor(0xFFFFFFFF);
             tv.setTextSize(11);
+            tv.setShadowLayer(4, 0, 0, 0x88000000);
             tv.setGravity(Gravity.CENTER);
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f);
@@ -218,10 +290,10 @@ public class MainActivity extends Activity {
             public boolean onTouch(View v, MotionEvent event) {
                 int action = event.getAction();
                 if (action == MotionEvent.ACTION_DOWN || action == MotionEvent.ACTION_MOVE) {
-                    float y = event.getY();
-                    int height = v.getHeight();
-                    if (height == 0) return true;
-                    int index = (int) (y / height * letters.length());
+                    float y = event.getY() - v.getPaddingTop();
+                    int h = v.getHeight() - v.getPaddingTop() - v.getPaddingBottom();
+                    if (h <= 0) return true;
+                    int index = (int) (y / h * letters.length());
                     if (index < 0) index = 0;
                     if (index >= letters.length()) index = letters.length() - 1;
                     showLetter(letters.charAt(index));

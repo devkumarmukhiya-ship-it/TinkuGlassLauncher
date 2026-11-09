@@ -4,70 +4,69 @@
     android:layout_height="match_parent">
 
     <LinearLayout
+        android:id="@+id/homeBox"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:orientation="vertical"
-        android:background="#66000000"
-        android:paddingLeft="24dp"
-        android:paddingRight="8dp"
-        android:paddingTop="48dp"
-        android:paddingBottom="16dp">
+        android:background="#33000000"
+        android:paddingLeft="28dp"
+        android:paddingRight="44dp"
+        android:paddingTop="56dp"
+        android:paddingBottom="32dp">
 
-        <TextClock
-            android:id="@+id/textClock"
+        <LinearLayout
+            android:id="@+id/clockBox"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:format12Hour="h:mm"
-            android:format24Hour="HH:mm"
-            android:textColor="#FFFFFF"
-            android:textSize="64sp"
-            android:fontFamily="sans-serif-light"
-            android:gravity="right"
-            android:paddingRight="24dp"/>
+            android:orientation="vertical">
 
-        <TextClock
-            android:id="@+id/textDate"
+            <TextClock
+                android:id="@+id/textClock"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:format12Hour="h:mm"
+                android:format24Hour="HH:mm"
+                android:textColor="#FFFFFF"
+                android:textSize="64sp"
+                android:fontFamily="sans-serif-light"
+                android:shadowColor="#66000000"
+                android:shadowRadius="6"/>
+
+            <TextClock
+                android:id="@+id/textDate"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:format12Hour="EEE, d MMM"
+                android:format24Hour="EEE, d MMM"
+                android:textColor="#E6FFFFFF"
+                android:textSize="18sp"
+                android:shadowColor="#66000000"
+                android:shadowRadius="6"/>
+        </LinearLayout>
+
+        <View
+            android:id="@+id/spacer"
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:format12Hour="EEEE, d MMMM"
-            android:format24Hour="EEEE, d MMMM"
-            android:textColor="#CCFFFFFF"
-            android:textSize="16sp"
-            android:gravity="right"
-            android:paddingRight="24dp"
-            android:layout_marginBottom="16dp"/>
+            android:layout_height="0dp"
+            android:layout_weight="1"/>
 
         <LinearLayout
             android:id="@+id/favoritesBox"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:paddingRight="24dp"
-            android:layout_marginBottom="12dp"/>
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:orientation="horizontal">
-
-            <ListView
-                android:id="@+id/listViewApps"
-                android:layout_width="0dp"
-                android:layout_height="match_parent"
-                android:layout_weight="1"
-                android:divider="@null"
-                android:dividerHeight="0dp"
-                android:scrollbars="none"/>
-
-            <LinearLayout
-                android:id="@+id/alphabetBar"
-                android:layout_width="28dp"
-                android:layout_height="match_parent"
-                android:orientation="vertical"
-                android:gravity="center"/>
-
-        </LinearLayout>
+            android:paddingTop="16dp"/>
     </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/alphabetBar"
+        android:layout_width="28dp"
+        android:layout_height="match_parent"
+        android:layout_gravity="right"
+        android:orientation="vertical"
+        android:gravity="center"
+        android:paddingTop="48dp"
+        android:paddingBottom="16dp"/>
 
     <FrameLayout
         android:id="@+id/letterOverlay"
@@ -98,7 +97,6 @@
             android:divider="@null"
             android:dividerHeight="0dp"
             android:scrollbars="none"/>
-
     </FrameLayout>
 
 </FrameLayout>
