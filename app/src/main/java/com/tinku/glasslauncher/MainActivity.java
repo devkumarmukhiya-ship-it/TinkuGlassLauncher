@@ -35,6 +35,7 @@ import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ListView;
 import android.widget.ScrollView;
+import android.widget.Switch;
 import android.widget.TextClock;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -81,6 +82,8 @@ public class MainActivity extends Activity {
     private View dragTarget = null;
     private String dragKx = "";
     private String dragKy = "";
+    private boolean dragRefreshFav = false;
+    private final List<View> floatingFavs = new ArrayList<View>();
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -105,9 +108,9 @@ public class MainActivity extends Activity {
 
         GradientDrawable circle = new GradientDrawable();
         circle.setShape(GradientDrawable.OVAL);
-        circle.setColor(0x66FFFFFF);
+        circle.setColor(0xB3FFFFFF);
         searchButton.setBackground(circle);
-        searchButton.setColorFilter(0xFFFFFFFF, PorterDuff.Mode.SRC_IN);
+        searchButton.setColorFilter(0xFF222222, PorterDuff.Mode.SRC_IN);
         searchButton.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -195,9 +198,17 @@ public class MainActivity extends Activity {
             }
         };
         rootFrame.setOnLongClickListener(homeLong);
-        clockBox.setOnLongClickListener(homeLong);
-        textClock.setOnLongClickListener(homeLong);
-        textDate.setOnLongClickListener(homeLong);
+
+        View.OnLongClickListener clockLong = new View.OnLongClickListener() {
+            @Override
+            public boolean onLongClick(View v) {
+                showClockMenu();
+                return true;
+            }
+        };
+        clockBox.setOnLongClickListener(clockLong);
+        textClock.setOnLongClickListener(clockLong);
+        textDate.setOnLongClickListener(clockLong);
 
         clockBox.addOnLayoutChangeListener(new View.OnLayoutChangeListener() {
             @Override
@@ -220,6 +231,7 @@ public class MainActivity extends Activity {
 
         setupAlphabetTouch();
         buildAlphabetBar();
+        applyClockStyle();
         applyAlign();
         applyClockPos();
         applyFavPos();
@@ -230,9 +242,22 @@ public class MainActivity extends Activity {
         super.onResume();
         loadApps();
         buildAlphabetBar();
+        applyClockStyle();
         applyAlign();
         applyClockPos();
         applyFavPos();
+    }
+
+    private void applyClockStyle() {
+        if (prefs.getBoolean("stacked", false)) {
+            textClock.setFormat12Hour("h\nmm");
+            textClock.setFormat24Hour("HH\nmm");
+            textClock.setLineSpacing(0f, 0.82f);
+        } else {
+            textClock.setFormat12Hour("h:mm");
+            textClock.setFormat24Hour("HH:mm");
+            textClock.setLineSpacing(0f, 1f);
+        }
     }
 
     private int dp(int v) {
@@ -306,6 +331,14 @@ public class MainActivity extends Activity {
         return "left".equals(prefs.getString("align", "left"));
     }
 
+    private boolean isFavLeft() {
+        return "left".equals(prefs.getString("favalign", "left"));
+    }
+
+    private boolean hasFavPos(String pkg) {
+        return prefs.contains("fpx:" + pkg) && prefs.contains("fpy:" + pkg);
+    }
+
     private void applyAlign() {
         int g = isLeft() ? Gravity.LEFT : Gravity.RIGHT;
         textClock.setGravity(g);
@@ -369,6 +402,10 @@ public class MainActivity extends Activity {
             dragMode = false;
             dragTarget = null;
             Toast.makeText(this, "Position saved", Toast.LENGTH_SHORT).show();
+            if (dragRefreshFav) {
+                dragRefreshFav = false;
+                refreshFavorites();
+            }
         }
     }
 
@@ -377,6 +414,7 @@ public class MainActivity extends Activity {
             Toast.makeText(this, "Nothing to move yet. Add a favourite first.", Toast.LENGTH_LONG).show();
             return;
         }
+        dragRefreshFav = false;
         dragTarget = target;
         dragKx = kx;
         dragKy = ky;
@@ -384,33 +422,154 @@ public class MainActivity extends Activity {
         Toast.makeText(this, "Touch anywhere on the screen, then lift your finger", Toast.LENGTH_LONG).show();
     }
 
-    private void showHomeMenu() {
-        showSheet(null, "Home screen",
+    private void startDragFav(ResolveInfo info, View row) {
+        String pkg = info.activityInfo.packageName;
+        String kx = "fpx:" + pkg;
+        String ky = "fpy:" + pkg;
+        if (row.getParent() == favoritesBox) {
+            int[] rl = new int[2];
+            int[] fl = new int[2];
+            row.getLocationOnScreen(rl);
+            rootFrame.getLocationOnScreen(fl);
+            int w = rootFrame.getWidth();
+            int h = rootFrame.getHeight();
+            int vw = row.getWidth();
+            int vh = row.getHeight();
+            float nx = rl[0] - fl[0];
+            float ny = rl[1] - fl[1];
+            float fx = (w - vw) > 0 ? nx / (w - vw) : 0f;
+            float fy = (h - vh) > 0 ? ny / (h - vh) : 0f;
+            prefs.edit().putFloat(kx, fx).putFloat(ky, fy).apply();
+            favoritesBox.removeView(row);
+            addFloatingFav(row, pkg);
+            row.setTranslationX(nx);
+            row.setTranslationY(ny);
+        }
+        startDrag(row, kx, ky);
+        if (dragMode) dragRefreshFav = true;
+    }
+
+    private void addFloatingFav(final View row, final String pkg) {
+        FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+            Gravity.TOP | Gravity.LEFT);
+        int idx = rootFrame.indexOfChild(alphabetBar);
+        rootFrame.addView(row, idx < 0 ? rootFrame.getChildCount() : idx, lp);
+        floatingFavs.add(row);
+        row.addOnLayoutChangeListener(new View.OnLayoutChangeListener() {
+            @Override
+            public void onLayoutChange(View v, int l, int t, int r, int b,
+                                       int oldL, int oldT, int oldR, int oldB) {
+                if ((r - l) != (oldR - oldL) || (b - t) != (oldB - oldT)) {
+                    applyPos(row, "fpx:" + pkg, "fpy:" + pkg, 0.06f, 0.5f);
+                }
+            }
+        });
+    }
+
+    private void showClockMenu() {
+        showSheet(null, "Clock",
             new String[] {
                 "Move clock (drag anywhere)",
-                "Move favourites (drag anywhere)",
                 "Align text left",
                 "Align text right",
-                "Reset positions",
-                "Hidden apps"
+                "Reset clock position"
             },
             new int[] {
                 android.R.drawable.ic_menu_mylocation,
-                android.R.drawable.ic_menu_mylocation,
+                0,
+                0,
+                android.R.drawable.ic_menu_revert
+            },
+            new Runnable[] {
+                () -> startDrag(clockBox, "cx", "cy"),
+                () -> { prefs.edit().putString("align", "left").apply(); applyAlign(); },
+                () -> { prefs.edit().putString("align", "right").apply(); applyAlign(); },
+                () -> { prefs.edit().remove("cx").remove("cy").apply(); applyClockPos(); }
+            });
+    }
+
+    private void addSwitchRow(LinearLayout box, String label, final String key, final Runnable onChange) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(0, dp(12), 0, dp(12));
+
+        TextView tv = new TextView(this);
+        tv.setText(label);
+        tv.setTextColor(0xFF111111);
+        tv.setTextSize(18);
+        row.addView(tv, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+
+        Switch sw = new Switch(this);
+        sw.setChecked(prefs.getBoolean(key, false));
+        sw.setOnCheckedChangeListener((b, on) -> {
+            prefs.edit().putBoolean(key, on).apply();
+            onChange.run();
+        });
+        row.addView(sw);
+        box.addView(row, new LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+    }
+
+    private void showSettings() {
+        final Dialog d = new Dialog(this);
+        d.requestWindowFeature(Window.FEATURE_NO_TITLE);
+
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(dp(24), dp(20), dp(24), dp(28));
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(0xFFF1F1F1);
+        float r = dp(28);
+        bg.setCornerRadii(new float[] { r, r, r, r, 0, 0, 0, 0 });
+        box.setBackground(bg);
+
+        TextView ht = new TextView(this);
+        ht.setText("Settings");
+        ht.setTextColor(0xFF111111);
+        ht.setTextSize(24);
+        ht.setPadding(0, 0, 0, dp(8));
+        box.addView(ht);
+
+        addSwitchRow(box, "Monochrome icons", "mono", () -> refreshAll());
+        addSwitchRow(box, "Stacked clock (hour over minute)", "stacked", () -> applyClockStyle());
+
+        d.setContentView(box);
+        Window w = d.getWindow();
+        w.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+        w.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        w.setGravity(Gravity.BOTTOM);
+        d.show();
+    }
+
+    private void showHomeMenu() {
+        showSheet(null, "Home screen",
+            new String[] {
+                "Settings",
+                "Favourites: icon on left",
+                "Favourites: icon on right",
+                "Reset favourites positions",
+                "Hidden apps"
+            },
+            new int[] {
+                android.R.drawable.ic_menu_preferences,
                 0,
                 0,
                 android.R.drawable.ic_menu_revert,
                 android.R.drawable.ic_menu_view
             },
             new Runnable[] {
-                () -> startDrag(clockBox, "cx", "cy"),
-                () -> startDrag(favoritesBox, "fx", "fy"),
-                () -> { prefs.edit().putString("align", "left").apply(); applyAlign(); },
-                () -> { prefs.edit().putString("align", "right").apply(); applyAlign(); },
+                () -> showSettings(),
+                () -> { prefs.edit().putString("favalign", "left").apply(); refreshFavorites(); },
+                () -> { prefs.edit().putString("favalign", "right").apply(); refreshFavorites(); },
                 () -> {
-                    prefs.edit().remove("cx").remove("cy").remove("fx").remove("fy").apply();
-                    applyClockPos();
-                    applyFavPos();
+                    SharedPreferences.Editor ed = prefs.edit();
+                    for (String k : prefs.getAll().keySet()) {
+                        if (k.startsWith("fpx:") || k.startsWith("fpy:")) ed.remove(k);
+                    }
+                    ed.apply();
+                    refreshFavorites();
                 },
                 () -> showHiddenApps()
             });
@@ -550,20 +709,25 @@ public class MainActivity extends Activity {
     }
 
     private void refreshFavorites() {
+        for (int i = 0; i < floatingFavs.size(); i++) {
+            rootFrame.removeView(floatingFavs.get(i));
+        }
+        floatingFavs.clear();
         favoritesBox.removeAllViews();
         Set<String> favs = getFavorites();
-        boolean left = isLeft();
+        boolean left = isFavLeft();
         for (int i = 0; i < installedApps.size(); i++) {
             final ResolveInfo info = installedApps.get(i);
-            if (!favs.contains(info.activityInfo.packageName)) continue;
+            final String pkg = info.activityInfo.packageName;
+            if (!favs.contains(pkg)) continue;
 
-            LinearLayout row = new LinearLayout(this);
+            final LinearLayout row = new LinearLayout(this);
             row.setOrientation(LinearLayout.HORIZONTAL);
             row.setGravity(Gravity.CENTER_VERTICAL | (left ? Gravity.LEFT : Gravity.RIGHT));
             row.setPadding(0, dp(8), 0, dp(8));
 
             ImageView iv = new ImageView(this);
-            iv.setImageDrawable(info.loadIcon(pm));
+            iv.setImageDrawable(AppAdapter.iconOf(this, info));
             LinearLayout.LayoutParams ilp = new LinearLayout.LayoutParams(dp(48), dp(48));
 
             TextView tv = new TextView(this);
@@ -594,12 +758,16 @@ public class MainActivity extends Activity {
             row.setOnLongClickListener(new View.OnLongClickListener() {
                 @Override
                 public boolean onLongClick(View v) {
-                    showMenu(info);
+                    showMenu(info, row);
                     return true;
                 }
             });
-            favoritesBox.addView(row, new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+            if (hasFavPos(pkg)) {
+                addFloatingFav(row, pkg);
+            } else {
+                favoritesBox.addView(row, new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+            }
         }
     }
 
@@ -692,50 +860,79 @@ public class MainActivity extends Activity {
     }
 
     private void showMenu(final ResolveInfo info) {
+        showMenu(info, null);
+    }
+
+    private void showMenu(final ResolveInfo info, final View homeRow) {
         final String pkg = info.activityInfo.packageName;
         final boolean isFav = getFavorites().contains(pkg);
-        showSheet(info.loadIcon(pm), labelOf(info),
-            new String[] {
-                isFav ? "Remove from favourites" : "Favourite",
-                "Rename",
-                "Hide from app list",
-                "App info",
-                "Uninstall"
-            },
-            new int[] {
-                isFav ? android.R.drawable.btn_star_big_on : android.R.drawable.btn_star_big_off,
-                android.R.drawable.ic_menu_edit,
-                android.R.drawable.ic_menu_view,
-                android.R.drawable.ic_menu_info_details,
-                android.R.drawable.ic_menu_delete
-            },
-            new Runnable[] {
-                () -> {
-                    Set<String> favs = getFavorites();
-                    if (isFav) favs.remove(pkg); else favs.add(pkg);
-                    saveFavorites(favs);
+        List<String> labels = new ArrayList<String>();
+        List<Integer> icons = new ArrayList<Integer>();
+        List<Runnable> actions = new ArrayList<Runnable>();
+
+        if (homeRow != null) {
+            labels.add("Drag anywhere");
+            icons.add(android.R.drawable.ic_menu_mylocation);
+            actions.add(() -> startDragFav(info, homeRow));
+            if (hasFavPos(pkg)) {
+                labels.add("Reset position");
+                icons.add(android.R.drawable.ic_menu_revert);
+                actions.add(() -> {
+                    prefs.edit().remove("fpx:" + pkg).remove("fpy:" + pkg).apply();
                     refreshFavorites();
-                    refreshDrawerKeepScroll();
-                },
-                () -> showRename(info),
-                () -> {
-                    Set<String> h = getHidden();
-                    h.add(pkg);
-                    saveHidden(h);
-                    refreshAll();
-                    Toast.makeText(this, "Hidden. Long-press the home screen > Hidden apps to show again", Toast.LENGTH_LONG).show();
-                },
-                () -> {
-                    Intent i = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
-                    i.setData(Uri.parse("package:" + pkg));
-                    startActivity(i);
-                },
-                () -> {
-                    Intent i = new Intent(Intent.ACTION_DELETE);
-                    i.setData(Uri.parse("package:" + pkg));
-                    startActivity(i);
-                }
-            });
+                });
+            }
+        }
+
+        labels.add(isFav ? "Remove from favourites" : "Favourite");
+        icons.add(isFav ? android.R.drawable.btn_star_big_on : android.R.drawable.btn_star_big_off);
+        actions.add(() -> {
+            Set<String> favs = getFavorites();
+            if (isFav) {
+                favs.remove(pkg);
+                prefs.edit().remove("fpx:" + pkg).remove("fpy:" + pkg).apply();
+            } else {
+                favs.add(pkg);
+            }
+            saveFavorites(favs);
+            refreshFavorites();
+            refreshDrawerKeepScroll();
+        });
+
+        labels.add("Rename");
+        icons.add(android.R.drawable.ic_menu_edit);
+        actions.add(() -> showRename(info));
+
+        labels.add("Hide from app list");
+        icons.add(android.R.drawable.ic_menu_view);
+        actions.add(() -> {
+            Set<String> h = getHidden();
+            h.add(pkg);
+            saveHidden(h);
+            refreshAll();
+            Toast.makeText(this, "Hidden. Long-press the home screen > Hidden apps to show again", Toast.LENGTH_LONG).show();
+        });
+
+        labels.add("App info");
+        icons.add(android.R.drawable.ic_menu_info_details);
+        actions.add(() -> {
+            Intent i = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
+            i.setData(Uri.parse("package:" + pkg));
+            startActivity(i);
+        });
+
+        labels.add("Uninstall");
+        icons.add(android.R.drawable.ic_menu_delete);
+        actions.add(() -> {
+            Intent i = new Intent(Intent.ACTION_DELETE);
+            i.setData(Uri.parse("package:" + pkg));
+            startActivity(i);
+        });
+
+        int[] ic = new int[icons.size()];
+        for (int k = 0; k < ic.length; k++) ic[k] = icons.get(k);
+        showSheet(info.loadIcon(pm), labelOf(info),
+            labels.toArray(new String[0]), ic, actions.toArray(new Runnable[0]));
     }
 
     private void launchApp(ResolveInfo info) {

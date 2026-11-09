@@ -111,7 +111,7 @@ public class DrawerAdapter extends BaseAdapter {
         ImageView icon = convertView.findViewById(R.id.imageViewAppIcon);
         TextView name = convertView.findViewById(R.id.textViewAppName);
         name.setText(AppAdapter.labelOf(context, row.app));
-        icon.setImageDrawable(row.app.loadIcon(pm));
+        icon.setImageDrawable(AppAdapter.iconOf(context, row.app));
         return convertView;
     }
 }

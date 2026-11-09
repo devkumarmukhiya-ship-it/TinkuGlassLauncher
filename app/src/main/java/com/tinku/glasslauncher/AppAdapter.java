@@ -4,6 +4,12 @@ import android.content.Context;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
+import android.graphics.ColorMatrix;
+import android.graphics.ColorMatrixColorFilter;
+import android.graphics.drawable.AdaptiveIconDrawable;
+import android.graphics.drawable.Drawable;
+import android.graphics.drawable.InsetDrawable;
+import android.os.Build;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -38,6 +44,28 @@ public class AppAdapter extends BaseAdapter {
         return info.loadLabel(ctx.getPackageManager()).toString();
     }
 
+    /** App icon, optionally turned into a single-colour (monochrome) icon. */
+    public static Drawable iconOf(Context ctx, ResolveInfo info) {
+        Drawable d = info.loadIcon(ctx.getPackageManager());
+        SharedPreferences p = ctx.getSharedPreferences("tinku", Context.MODE_PRIVATE);
+        if (!p.getBoolean("mono", false)) {
+            return d;
+        }
+        if (Build.VERSION.SDK_INT >= 33 && d instanceof AdaptiveIconDrawable) {
+            Drawable m = ((AdaptiveIconDrawable) d).getMonochrome();
+            if (m != null) {
+                m = m.mutate();
+                m.setTint(0xFFFFFFFF);
+                return new InsetDrawable(m, -0.2f);
+            }
+        }
+        Drawable g = d.mutate();
+        ColorMatrix cm = new ColorMatrix();
+        cm.setSaturation(0f);
+        g.setColorFilter(new ColorMatrixColorFilter(cm));
+        return g;
+    }
+
     @Override
     public int getCount() {
         return apps.size();
@@ -64,7 +92,7 @@ public class AppAdapter extends BaseAdapter {
         TextView name = convertView.findViewById(R.id.textViewAppName);
 
         name.setText(labelOf(context, info));
-        icon.setImageDrawable(info.loadIcon(pm));
+        icon.setImageDrawable(iconOf(context, info));
 
         return convertView;
     }
