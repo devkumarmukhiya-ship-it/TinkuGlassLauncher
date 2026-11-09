@@ -1,18 +1,24 @@
 package com.tinku.glasslauncher;
 
 import android.app.Activity;
-import android.app.AlertDialog;
-import android.content.DialogInterface;
+import android.app.Dialog;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
+import android.graphics.Color;
+import android.graphics.PorterDuff;
+import android.graphics.drawable.ColorDrawable;
+import android.graphics.drawable.Drawable;
+import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
 import android.os.Bundle;
 import android.provider.Settings;
 import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
+import android.view.ViewGroup;
+import android.view.Window;
 import android.widget.AdapterView;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
@@ -20,6 +26,7 @@ import android.widget.LinearLayout;
 import android.widget.ListView;
 import android.widget.TextClock;
 import android.widget.TextView;
+import android.widget.Toast;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -28,12 +35,11 @@ import java.util.List;
 import java.util.Set;
 
 public class MainActivity extends Activity {
+    private FrameLayout rootFrame;
     private ListView listViewLetter;
     private LinearLayout alphabetBar;
-    private LinearLayout homeBox;
     private LinearLayout clockBox;
     private LinearLayout favoritesBox;
-    private View spacer;
     private TextClock textClock;
     private TextClock textDate;
     private FrameLayout letterOverlay;
@@ -44,6 +50,7 @@ public class MainActivity extends Activity {
     private PackageManager pm;
     private SharedPreferences prefs;
     private char currentLetter = 0;
+    private boolean dragMode = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -52,12 +59,11 @@ public class MainActivity extends Activity {
 
         prefs = getSharedPreferences("tinku", MODE_PRIVATE);
         pm = getPackageManager();
+        rootFrame = findViewById(R.id.rootFrame);
         listViewLetter = findViewById(R.id.listViewLetter);
         alphabetBar = findViewById(R.id.alphabetBar);
-        homeBox = findViewById(R.id.homeBox);
         clockBox = findViewById(R.id.clockBox);
         favoritesBox = findViewById(R.id.favoritesBox);
-        spacer = findViewById(R.id.spacer);
         textClock = findViewById(R.id.textClock);
         textDate = findViewById(R.id.textDate);
         letterOverlay = findViewById(R.id.letterOverlay);
@@ -99,15 +105,27 @@ public class MainActivity extends Activity {
         textClock.setOnLongClickListener(clockLong);
         textDate.setOnLongClickListener(clockLong);
 
+        clockBox.addOnLayoutChangeListener(new View.OnLayoutChangeListener() {
+            @Override
+            public void onLayoutChange(View v, int l, int t, int r, int b,
+                                       int oldL, int oldT, int oldR, int oldB) {
+                if ((r - l) != (oldR - oldL) || (b - t) != (oldB - oldT)) {
+                    applyClockPos();
+                }
+            }
+        });
+
         setupAlphabetBar();
-        applyLayout();
+        applyAlign();
+        applyClockPos();
     }
 
     @Override
     protected void onResume() {
         super.onResume();
         loadApps();
-        applyLayout();
+        applyAlign();
+        applyClockPos();
     }
 
     private int dp(int v) {
@@ -141,41 +159,75 @@ public class MainActivity extends Activity {
         return "left".equals(prefs.getString("align", "left"));
     }
 
-    private void applyLayout() {
+    private void applyAlign() {
         int g = isLeft() ? Gravity.LEFT : Gravity.RIGHT;
         textClock.setGravity(g);
         textDate.setGravity(g);
-        boolean top = "top".equals(prefs.getString("vert", "bottom"));
-        homeBox.removeAllViews();
-        if (top) {
-            homeBox.addView(clockBox);
-            homeBox.addView(spacer);
-            homeBox.addView(favoritesBox);
-        } else {
-            homeBox.addView(spacer);
-            homeBox.addView(clockBox);
-            homeBox.addView(favoritesBox);
-        }
         refreshFavorites();
     }
 
+    private void applyClockPos() {
+        rootFrame.post(new Runnable() {
+            @Override
+            public void run() {
+                int w = rootFrame.getWidth();
+                int h = rootFrame.getHeight();
+                int cw = clockBox.getWidth();
+                int ch = clockBox.getHeight();
+                if (w == 0 || cw == 0) return;
+                float fx = prefs.getFloat("cx", 0.06f);
+                float fy = prefs.getFloat("cy", 0.55f);
+                clockBox.setX(fx * Math.max(0, w - cw));
+                clockBox.setY(fy * Math.max(0, h - ch));
+            }
+        });
+    }
+
+    @Override
+    public boolean dispatchTouchEvent(MotionEvent e) {
+        if (dragMode) {
+            handleDrag(e);
+            return true;
+        }
+        return super.dispatchTouchEvent(e);
+    }
+
+    private void handleDrag(MotionEvent e) {
+        int a = e.getActionMasked();
+        int[] loc = new int[2];
+        rootFrame.getLocationOnScreen(loc);
+        int w = rootFrame.getWidth();
+        int h = rootFrame.getHeight();
+        int cw = clockBox.getWidth();
+        int ch = clockBox.getHeight();
+        float nx = e.getRawX() - loc[0] - cw / 2f;
+        float ny = e.getRawY() - loc[1] - ch / 2f;
+        nx = Math.max(0, Math.min(nx, w - cw));
+        ny = Math.max(0, Math.min(ny, h - ch));
+        clockBox.setX(nx);
+        clockBox.setY(ny);
+        if (a == MotionEvent.ACTION_UP || a == MotionEvent.ACTION_CANCEL) {
+            float fx = (w - cw) > 0 ? nx / (w - cw) : 0f;
+            float fy = (h - ch) > 0 ? ny / (h - ch) : 0f;
+            prefs.edit().putFloat("cx", fx).putFloat("cy", fy).apply();
+            dragMode = false;
+            Toast.makeText(this, "Clock position saved", Toast.LENGTH_SHORT).show();
+        }
+    }
+
     private void showClockMenu() {
-        String[] options = new String[] { "Left", "Right", "Top", "Bottom" };
-        new AlertDialog.Builder(this)
-            .setTitle("Clock position")
-            .setItems(options, new DialogInterface.OnClickListener() {
-                @Override
-                public void onClick(DialogInterface dialog, int which) {
-                    SharedPreferences.Editor e = prefs.edit();
-                    if (which == 0) e.putString("align", "left");
-                    else if (which == 1) e.putString("align", "right");
-                    else if (which == 2) e.putString("vert", "top");
-                    else e.putString("vert", "bottom");
-                    e.apply();
-                    applyLayout();
-                }
-            })
-            .show();
+        showSheet(null, "Clock",
+            new String[] { "Move clock (drag anywhere)", "Align text left", "Align text right", "Reset position" },
+            new int[] { android.R.drawable.ic_menu_mylocation, 0, 0, android.R.drawable.ic_menu_revert },
+            new Runnable[] {
+                () -> {
+                    dragMode = true;
+                    Toast.makeText(this, "Touch and drag anywhere, then lift your finger", Toast.LENGTH_LONG).show();
+                },
+                () -> { prefs.edit().putString("align", "left").apply(); applyAlign(); },
+                () -> { prefs.edit().putString("align", "right").apply(); applyAlign(); },
+                () -> { prefs.edit().remove("cx").remove("cy").apply(); applyClockPos(); }
+            });
     }
 
     private void refreshFavorites() {
@@ -230,36 +282,108 @@ public class MainActivity extends Activity {
         }
     }
 
+    private void showSheet(Drawable icon, CharSequence title, String[] labels,
+                           int[] icons, final Runnable[] actions) {
+        final Dialog d = new Dialog(this);
+        d.requestWindowFeature(Window.FEATURE_NO_TITLE);
+
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(dp(24), dp(20), dp(24), dp(28));
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(0xFFF1F1F1);
+        float r = dp(28);
+        bg.setCornerRadii(new float[] { r, r, r, r, 0, 0, 0, 0 });
+        box.setBackground(bg);
+
+        LinearLayout header = new LinearLayout(this);
+        header.setOrientation(LinearLayout.HORIZONTAL);
+        header.setGravity(Gravity.CENTER_VERTICAL);
+        header.setPadding(0, 0, 0, dp(12));
+        if (icon != null) {
+            ImageView hi = new ImageView(this);
+            hi.setImageDrawable(icon);
+            LinearLayout.LayoutParams hlp = new LinearLayout.LayoutParams(dp(44), dp(44));
+            hlp.rightMargin = dp(16);
+            header.addView(hi, hlp);
+        }
+        TextView ht = new TextView(this);
+        ht.setText(title);
+        ht.setTextColor(0xFF111111);
+        ht.setTextSize(24);
+        header.addView(ht);
+        box.addView(header);
+
+        for (int i = 0; i < labels.length; i++) {
+            final int idx = i;
+            LinearLayout row = new LinearLayout(this);
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            row.setGravity(Gravity.CENTER_VERTICAL);
+            row.setPadding(0, dp(15), 0, dp(15));
+
+            if (icons != null && icons[i] != 0) {
+                ImageView iv = new ImageView(this);
+                iv.setImageResource(icons[i]);
+                iv.setColorFilter(0xFF333333, PorterDuff.Mode.SRC_IN);
+                row.addView(iv, new LinearLayout.LayoutParams(dp(26), dp(26)));
+            } else {
+                row.addView(new View(this), new LinearLayout.LayoutParams(dp(26), dp(26)));
+            }
+
+            TextView tv = new TextView(this);
+            tv.setText(labels[i]);
+            tv.setTextColor(0xFF111111);
+            tv.setTextSize(18);
+            tv.setPadding(dp(20), 0, 0, 0);
+            row.addView(tv);
+
+            row.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    d.dismiss();
+                    actions[idx].run();
+                }
+            });
+            box.addView(row, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        }
+
+        d.setContentView(box);
+        Window w = d.getWindow();
+        w.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+        w.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        w.setGravity(Gravity.BOTTOM);
+        d.show();
+    }
+
     private void showMenu(final ResolveInfo info) {
         final String pkg = info.activityInfo.packageName;
         final boolean isFav = getFavorites().contains(pkg);
-        String[] options = new String[] {
-            isFav ? "Remove from favourites" : "Favourite",
-            "App info",
-            "Uninstall"
-        };
-        new AlertDialog.Builder(this)
-            .setTitle(info.loadLabel(pm))
-            .setItems(options, new DialogInterface.OnClickListener() {
-                @Override
-                public void onClick(DialogInterface dialog, int which) {
-                    if (which == 0) {
-                        Set<String> favs = getFavorites();
-                        if (isFav) favs.remove(pkg); else favs.add(pkg);
-                        saveFavorites(favs);
-                        refreshFavorites();
-                    } else if (which == 1) {
-                        Intent i = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
-                        i.setData(Uri.parse("package:" + pkg));
-                        startActivity(i);
-                    } else {
-                        Intent i = new Intent(Intent.ACTION_DELETE);
-                        i.setData(Uri.parse("package:" + pkg));
-                        startActivity(i);
-                    }
+        showSheet(info.loadIcon(pm), info.loadLabel(pm),
+            new String[] { isFav ? "Remove from favourites" : "Favourite", "App info", "Uninstall" },
+            new int[] {
+                isFav ? android.R.drawable.btn_star_big_on : android.R.drawable.btn_star_big_off,
+                android.R.drawable.ic_menu_info_details,
+                android.R.drawable.ic_menu_delete
+            },
+            new Runnable[] {
+                () -> {
+                    Set<String> favs = getFavorites();
+                    if (isFav) favs.remove(pkg); else favs.add(pkg);
+                    saveFavorites(favs);
+                    refreshFavorites();
+                },
+                () -> {
+                    Intent i = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
+                    i.setData(Uri.parse("package:" + pkg));
+                    startActivity(i);
+                },
+                () -> {
+                    Intent i = new Intent(Intent.ACTION_DELETE);
+                    i.setData(Uri.parse("package:" + pkg));
+                    startActivity(i);
                 }
-            })
-            .show();
+            });
     }
 
     private void launchApp(ResolveInfo info) {

@@ -1,61 +1,50 @@
 <?xml version="1.0" encoding="utf-8"?>
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/rootFrame"
     android:layout_width="match_parent"
-    android:layout_height="match_parent">
+    android:layout_height="match_parent"
+    android:background="#33000000">
 
     <LinearLayout
-        android:id="@+id/homeBox"
+        android:id="@+id/favoritesBox"
         android:layout_width="match_parent"
-        android:layout_height="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
         android:orientation="vertical"
-        android:background="#33000000"
         android:paddingLeft="28dp"
         android:paddingRight="44dp"
-        android:paddingTop="56dp"
-        android:paddingBottom="32dp">
+        android:paddingBottom="32dp"/>
 
-        <LinearLayout
-            android:id="@+id/clockBox"
+    <LinearLayout
+        android:id="@+id/clockBox"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|left"
+        android:orientation="vertical"
+        android:padding="8dp">
+
+        <TextClock
+            android:id="@+id/textClock"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="vertical">
+            android:format12Hour="h:mm"
+            android:format24Hour="HH:mm"
+            android:textColor="#FFFFFF"
+            android:textSize="64sp"
+            android:fontFamily="sans-serif-light"
+            android:shadowColor="#66000000"
+            android:shadowRadius="6"/>
 
-            <TextClock
-                android:id="@+id/textClock"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:format12Hour="h:mm"
-                android:format24Hour="HH:mm"
-                android:textColor="#FFFFFF"
-                android:textSize="64sp"
-                android:fontFamily="sans-serif-light"
-                android:shadowColor="#66000000"
-                android:shadowRadius="6"/>
-
-            <TextClock
-                android:id="@+id/textDate"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:format12Hour="EEE, d MMM"
-                android:format24Hour="EEE, d MMM"
-                android:textColor="#E6FFFFFF"
-                android:textSize="18sp"
-                android:shadowColor="#66000000"
-                android:shadowRadius="6"/>
-        </LinearLayout>
-
-        <View
-            android:id="@+id/spacer"
-            android:layout_width="match_parent"
-            android:layout_height="0dp"
-            android:layout_weight="1"/>
-
-        <LinearLayout
-            android:id="@+id/favoritesBox"
+        <TextClock
+            android:id="@+id/textDate"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:paddingTop="16dp"/>
+            android:format12Hour="EEE, d MMM"
+            android:format24Hour="EEE, d MMM"
+            android:textColor="#E6FFFFFF"
+            android:textSize="18sp"
+            android:shadowColor="#66000000"
+            android:shadowRadius="6"/>
     </LinearLayout>
 
     <LinearLayout
@@ -73,10 +62,10 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:layout_marginRight="36dp"
-        android:background="#E6101414"
+        android:background="#CC000000"
         android:visibility="gone"
-        android:paddingLeft="24dp"
-        android:paddingRight="12dp"
+        android:paddingLeft="28dp"
+        android:paddingRight="8dp"
         android:paddingTop="48dp"
         android:paddingBottom="16dp">
 
@@ -85,15 +74,15 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_gravity="top|left"
-            android:textColor="#66FFFFFF"
-            android:textSize="72sp"
+            android:textColor="#99FFFFFF"
+            android:textSize="64sp"
             android:fontFamily="sans-serif-thin"/>
 
         <ListView
             android:id="@+id/listViewLetter"
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_gravity="center_vertical"
+            android:layout_height="match_parent"
+            android:layout_marginTop="96dp"
             android:divider="@null"
             android:dividerHeight="0dp"
             android:scrollbars="none"/>
