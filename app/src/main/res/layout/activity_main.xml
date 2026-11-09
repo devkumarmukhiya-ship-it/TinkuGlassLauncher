@@ -13,7 +13,7 @@
         android:orientation="vertical"
         android:paddingLeft="28dp"
         android:paddingRight="44dp"
-        android:paddingBottom="32dp"/>
+        android:paddingBottom="100dp"/>
 
     <LinearLayout
         android:id="@+id/clockBox"
@@ -57,6 +57,16 @@
         android:paddingTop="48dp"
         android:paddingBottom="16dp"/>
 
+    <ImageView
+        android:id="@+id/searchButton"
+        android:layout_width="56dp"
+        android:layout_height="56dp"
+        android:layout_gravity="bottom|right"
+        android:layout_marginRight="44dp"
+        android:layout_marginBottom="28dp"
+        android:padding="15dp"
+        android:src="@android:drawable/ic_menu_search"/>
+
     <FrameLayout
         android:id="@+id/letterOverlay"
         android:layout_width="match_parent"
@@ -87,5 +97,39 @@
             android:dividerHeight="0dp"
             android:scrollbars="none"/>
     </FrameLayout>
+
+    <LinearLayout
+        android:id="@+id/searchOverlay"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:background="#E6000000"
+        android:visibility="gone"
+        android:paddingLeft="28dp"
+        android:paddingRight="28dp"
+        android:paddingTop="56dp"
+        android:paddingBottom="16dp">
+
+        <EditText
+            android:id="@+id/searchInput"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="Search apps"
+            android:textColorHint="#88FFFFFF"
+            android:textColor="#FFFFFF"
+            android:textSize="22sp"
+            android:singleLine="true"
+            android:imeOptions="actionSearch"
+            android:inputType="text"
+            android:layout_marginBottom="12dp"/>
+
+        <ListView
+            android:id="@+id/listViewSearch"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:divider="@null"
+            android:dividerHeight="0dp"
+            android:scrollbars="none"/>
+    </LinearLayout>
 
 </FrameLayout>

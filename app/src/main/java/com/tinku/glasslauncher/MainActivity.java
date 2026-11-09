@@ -2,6 +2,7 @@ package com.tinku.glasslauncher;
 
 import android.app.Activity;
 import android.app.Dialog;
+import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
@@ -14,12 +15,18 @@ import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
 import android.os.Bundle;
 import android.provider.Settings;
+import android.text.Editable;
+import android.text.TextWatcher;
 import android.view.Gravity;
+import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.Window;
+import android.view.inputmethod.EditorInfo;
+import android.view.inputmethod.InputMethodManager;
 import android.widget.AdapterView;
+import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
@@ -33,23 +40,34 @@ import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.TreeSet;
 
 public class MainActivity extends Activity {
+    private static final String STAR = "\u2605";
+    private static final String OTHER = "\u25CB";
+
     private FrameLayout rootFrame;
     private ListView listViewLetter;
+    private ListView listViewSearch;
     private LinearLayout alphabetBar;
     private LinearLayout clockBox;
     private LinearLayout favoritesBox;
+    private LinearLayout searchOverlay;
+    private ImageView searchButton;
+    private EditText searchInput;
     private TextClock textClock;
     private TextClock textDate;
     private FrameLayout letterOverlay;
     private TextView textLetter;
     private List<ResolveInfo> installedApps = new ArrayList<ResolveInfo>();
     private List<ResolveInfo> letterApps = new ArrayList<ResolveInfo>();
+    private List<ResolveInfo> searchApps = new ArrayList<ResolveInfo>();
+    private List<String> keys = new ArrayList<String>();
     private AppAdapter letterAdapter;
+    private AppAdapter searchAdapter;
     private PackageManager pm;
     private SharedPreferences prefs;
-    private char currentLetter = 0;
+    private String currentKey = "";
     private boolean dragMode = false;
 
     @Override
@@ -61,13 +79,29 @@ public class MainActivity extends Activity {
         pm = getPackageManager();
         rootFrame = findViewById(R.id.rootFrame);
         listViewLetter = findViewById(R.id.listViewLetter);
+        listViewSearch = findViewById(R.id.listViewSearch);
         alphabetBar = findViewById(R.id.alphabetBar);
         clockBox = findViewById(R.id.clockBox);
         favoritesBox = findViewById(R.id.favoritesBox);
+        searchOverlay = findViewById(R.id.searchOverlay);
+        searchButton = findViewById(R.id.searchButton);
+        searchInput = findViewById(R.id.searchInput);
         textClock = findViewById(R.id.textClock);
         textDate = findViewById(R.id.textDate);
         letterOverlay = findViewById(R.id.letterOverlay);
         textLetter = findViewById(R.id.textLetter);
+
+        GradientDrawable circle = new GradientDrawable();
+        circle.setShape(GradientDrawable.OVAL);
+        circle.setColor(0x66FFFFFF);
+        searchButton.setBackground(circle);
+        searchButton.setColorFilter(0xFFFFFFFF, PorterDuff.Mode.SRC_IN);
+        searchButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                showSearch();
+            }
+        });
 
         loadApps();
 
@@ -94,6 +128,46 @@ public class MainActivity extends Activity {
             }
         });
 
+        searchAdapter = new AppAdapter(this, searchApps, R.layout.item_app_icon);
+        listViewSearch.setAdapter(searchAdapter);
+        listViewSearch.setOnItemClickListener(new AdapterView.OnItemClickListener() {
+            @Override
+            public void onItemClick(AdapterView<?> parent, View view, int position, long id) {
+                ResolveInfo info = searchApps.get(position);
+                hideSearch();
+                launchApp(info);
+            }
+        });
+        listViewSearch.setOnItemLongClickListener(new AdapterView.OnItemLongClickListener() {
+            @Override
+            public boolean onItemLongClick(AdapterView<?> parent, View view, int position, long id) {
+                showMenu(searchApps.get(position));
+                return true;
+            }
+        });
+        searchInput.addTextChangedListener(new TextWatcher() {
+            @Override
+            public void beforeTextChanged(CharSequence s, int a, int b, int c) {}
+            @Override
+            public void onTextChanged(CharSequence s, int a, int b, int c) {
+                filterSearch(s.toString());
+            }
+            @Override
+            public void afterTextChanged(Editable s) {}
+        });
+        searchInput.setOnEditorActionListener(new TextView.OnEditorActionListener() {
+            @Override
+            public boolean onEditorAction(TextView v, int actionId, KeyEvent event) {
+                if (actionId == EditorInfo.IME_ACTION_SEARCH && !searchApps.isEmpty()) {
+                    ResolveInfo info = searchApps.get(0);
+                    hideSearch();
+                    launchApp(info);
+                    return true;
+                }
+                return false;
+            }
+        });
+
         View.OnLongClickListener clockLong = new View.OnLongClickListener() {
             @Override
             public boolean onLongClick(View v) {
@@ -115,7 +189,8 @@ public class MainActivity extends Activity {
             }
         });
 
-        setupAlphabetBar();
+        setupAlphabetTouch();
+        buildAlphabetBar();
         applyAlign();
         applyClockPos();
     }
@@ -124,6 +199,7 @@ public class MainActivity extends Activity {
     protected void onResume() {
         super.onResume();
         loadApps();
+        buildAlphabetBar();
         applyAlign();
         applyClockPos();
     }
@@ -145,6 +221,14 @@ public class MainActivity extends Activity {
                 );
             }
         });
+    }
+
+    private String keyOf(ResolveInfo info) {
+        String label = info.loadLabel(pm).toString().trim();
+        if (label.length() == 0) return OTHER;
+        char c = Character.toUpperCase(label.charAt(0));
+        if (c >= 'A' && c <= 'Z') return String.valueOf(c);
+        return OTHER;
     }
 
     private Set<String> getFavorites() {
@@ -394,13 +478,24 @@ public class MainActivity extends Activity {
         startActivity(launchIntent);
     }
 
-    private void setupAlphabetBar() {
-        final String letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-        for (int i = 0; i < letters.length(); i++) {
+    private void buildAlphabetBar() {
+        TreeSet<String> letters = new TreeSet<String>();
+        boolean hasOther = false;
+        for (int i = 0; i < installedApps.size(); i++) {
+            String k = keyOf(installedApps.get(i));
+            if (OTHER.equals(k)) hasOther = true; else letters.add(k);
+        }
+        keys.clear();
+        keys.add(STAR);
+        keys.addAll(letters);
+        if (hasOther) keys.add(OTHER);
+
+        alphabetBar.removeAllViews();
+        for (int i = 0; i < keys.size(); i++) {
             TextView tv = new TextView(this);
-            tv.setText(String.valueOf(letters.charAt(i)));
+            tv.setText(keys.get(i));
             tv.setTextColor(0xFFFFFFFF);
-            tv.setTextSize(11);
+            tv.setTextSize(13);
             tv.setShadowLayer(4, 0, 0, 0x88000000);
             tv.setGravity(Gravity.CENTER);
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
@@ -408,51 +503,90 @@ public class MainActivity extends Activity {
             tv.setLayoutParams(lp);
             alphabetBar.addView(tv);
         }
+    }
 
+    private void setupAlphabetTouch() {
         alphabetBar.setOnTouchListener(new View.OnTouchListener() {
             @Override
             public boolean onTouch(View v, MotionEvent event) {
                 int action = event.getAction();
                 if (action == MotionEvent.ACTION_DOWN || action == MotionEvent.ACTION_MOVE) {
+                    if (keys.isEmpty()) return true;
                     float y = event.getY() - v.getPaddingTop();
                     int h = v.getHeight() - v.getPaddingTop() - v.getPaddingBottom();
                     if (h <= 0) return true;
-                    int index = (int) (y / h * letters.length());
+                    int index = (int) (y / h * keys.size());
                     if (index < 0) index = 0;
-                    if (index >= letters.length()) index = letters.length() - 1;
-                    showLetter(letters.charAt(index));
+                    if (index >= keys.size()) index = keys.size() - 1;
+                    showKey(keys.get(index));
                 }
                 return true;
             }
         });
     }
 
-    private void showLetter(char letter) {
-        if (letter == currentLetter && letterOverlay.getVisibility() == View.VISIBLE) {
+    private void showKey(String key) {
+        if (key.equals(currentKey) && letterOverlay.getVisibility() == View.VISIBLE) {
             return;
         }
-        currentLetter = letter;
+        currentKey = key;
         letterApps.clear();
+        Set<String> favs = getFavorites();
         for (int i = 0; i < installedApps.size(); i++) {
             ResolveInfo info = installedApps.get(i);
-            String label = info.loadLabel(pm).toString();
-            if (label.length() > 0 && Character.toUpperCase(label.charAt(0)) == letter) {
-                letterApps.add(info);
+            boolean match;
+            if (STAR.equals(key)) {
+                match = favs.contains(info.activityInfo.packageName);
+            } else {
+                match = keyOf(info).equals(key);
             }
+            if (match) letterApps.add(info);
         }
-        textLetter.setText(String.valueOf(letter));
+        textLetter.setText(key);
         letterAdapter.notifyDataSetChanged();
         letterOverlay.setVisibility(View.VISIBLE);
     }
 
     private void hideOverlay() {
         letterOverlay.setVisibility(View.GONE);
-        currentLetter = 0;
+        currentKey = "";
+    }
+
+    private void showSearch() {
+        hideOverlay();
+        searchInput.setText("");
+        filterSearch("");
+        searchOverlay.setVisibility(View.VISIBLE);
+        searchInput.requestFocus();
+        InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
+        if (imm != null) imm.showSoftInput(searchInput, InputMethodManager.SHOW_IMPLICIT);
+    }
+
+    private void hideSearch() {
+        InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
+        if (imm != null) imm.hideSoftInputFromWindow(searchInput.getWindowToken(), 0);
+        searchOverlay.setVisibility(View.GONE);
+        searchInput.setText("");
+    }
+
+    private void filterSearch(String q) {
+        String query = q.trim().toLowerCase();
+        searchApps.clear();
+        for (int i = 0; i < installedApps.size(); i++) {
+            ResolveInfo info = installedApps.get(i);
+            String label = info.loadLabel(pm).toString().toLowerCase();
+            if (query.length() == 0 || label.contains(query)) {
+                searchApps.add(info);
+            }
+        }
+        searchAdapter.notifyDataSetChanged();
     }
 
     @Override
     public void onBackPressed() {
-        if (letterOverlay.getVisibility() == View.VISIBLE) {
+        if (searchOverlay.getVisibility() == View.VISIBLE) {
+            hideSearch();
+        } else if (letterOverlay.getVisibility() == View.VISIBLE) {
             hideOverlay();
         }
     }
