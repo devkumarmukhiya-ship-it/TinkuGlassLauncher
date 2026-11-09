@@ -1,6 +1,7 @@
 package com.tinku.glasslauncher;
 
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.app.Dialog;
 import android.content.Context;
 import android.content.Intent;
@@ -59,6 +60,7 @@ public class MainActivity extends Activity {
     private TextClock textDate;
     private FrameLayout letterOverlay;
     private TextView textLetter;
+    private List<ResolveInfo> allApps = new ArrayList<ResolveInfo>();
     private List<ResolveInfo> installedApps = new ArrayList<ResolveInfo>();
     private List<ResolveInfo> letterApps = new ArrayList<ResolveInfo>();
     private List<ResolveInfo> searchApps = new ArrayList<ResolveInfo>();
@@ -208,23 +210,49 @@ public class MainActivity extends Activity {
         return (int) (v * getResources().getDisplayMetrics().density);
     }
 
+    private String labelOf(ResolveInfo info) {
+        return AppAdapter.labelOf(this, info);
+    }
+
     private void loadApps() {
         Intent intent = new Intent(Intent.ACTION_MAIN, null);
         intent.addCategory(Intent.CATEGORY_LAUNCHER);
-        installedApps = pm.queryIntentActivities(intent, 0);
-        Collections.sort(installedApps, new Comparator<ResolveInfo>() {
+        allApps = pm.queryIntentActivities(intent, 0);
+        Collections.sort(allApps, new Comparator<ResolveInfo>() {
             @Override
             public int compare(ResolveInfo a, ResolveInfo b) {
                 return String.CASE_INSENSITIVE_ORDER.compare(
-                    a.loadLabel(pm).toString(),
-                    b.loadLabel(pm).toString()
+                    labelOf(a),
+                    labelOf(b)
                 );
             }
         });
+        Set<String> hidden = getHidden();
+        installedApps = new ArrayList<ResolveInfo>();
+        for (int i = 0; i < allApps.size(); i++) {
+            ResolveInfo info = allApps.get(i);
+            if (!hidden.contains(info.activityInfo.packageName)) {
+                installedApps.add(info);
+            }
+        }
+    }
+
+    private void refreshAll() {
+        loadApps();
+        buildAlphabetBar();
+        refreshFavorites();
+        if (letterOverlay.getVisibility() == View.VISIBLE && currentKey.length() > 0) {
+            String k = currentKey;
+            currentKey = "";
+            showKey(k);
+        }
+        if (searchOverlay.getVisibility() == View.VISIBLE) {
+            filterSearch(searchInput.getText().toString());
+        }
     }
 
     private String keyOf(ResolveInfo info) {
-        String label = info.loadLabel(pm).toString().trim();
+        String label = labelOf(info).trim();
         if (label.length() == 0) return OTHER;
         char c = Character.toUpperCase(label.charAt(0));
         if (c >= 'A' && c <= 'Z') return String.valueOf(c);
@@ -237,6 +265,14 @@ public class MainActivity extends Activity {
 
     private void saveFavorites(Set<String> favs) {
         prefs.edit().putStringSet("favs", favs).apply();
+    }
+
+    private Set<String> getHidden() {
+        return new HashSet<String>(prefs.getStringSet("hidden", new HashSet<String>()));
+    }
+
+    private void saveHidden(Set<String> hidden) {
+        prefs.edit().putStringSet("hidden", hidden).apply();
     }
 
     private boolean isLeft() {
@@ -301,8 +337,20 @@ public class MainActivity extends Activity {
 
     private void showClockMenu() {
         showSheet(null, "Clock",
-            new String[] { "Move clock (drag anywhere)", "Align text left", "Align text right", "Reset position" },
-            new int[] { android.R.drawable.ic_menu_mylocation, 0, 0, android.R.drawable.ic_menu_revert },
+            new String[] {
+                "Move clock (drag anywhere)",
+                "Align text left",
+                "Align text right",
+                "Reset position",
+                "Hidden apps"
+            },
+            new int[] {
+                android.R.drawable.ic_menu_mylocation,
+                0,
+                0,
+                android.R.drawable.ic_menu_revert,
+                android.R.drawable.ic_menu_view
+            },
             new Runnable[] {
                 () -> {
                     dragMode = true;
@@ -310,8 +358,65 @@ public class MainActivity extends Activity {
                 },
                 () -> { prefs.edit().putString("align", "left").apply(); applyAlign(); },
                 () -> { prefs.edit().putString("align", "right").apply(); applyAlign(); },
-                () -> { prefs.edit().remove("cx").remove("cy").apply(); applyClockPos(); }
+                () -> { prefs.edit().remove("cx").remove("cy").apply(); applyClockPos(); },
+                () -> showHiddenApps()
             });
+    }
+
+    private void showHiddenApps() {
+        Set<String> hidden = getHidden();
+        final List<ResolveInfo> list = new ArrayList<ResolveInfo>();
+        for (int i = 0; i < allApps.size(); i++) {
+            ResolveInfo info = allApps.get(i);
+            if (hidden.contains(info.activityInfo.packageName)) {
+                list.add(info);
+            }
+        }
+        if (list.isEmpty()) {
+            Toast.makeText(this, "No hidden apps", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        String[] names = new String[list.size()];
+        for (int i = 0; i < list.size(); i++) {
+            names[i] = labelOf(list.get(i));
+        }
+        new AlertDialog.Builder(this, AlertDialog.THEME_DEVICE_DEFAULT_LIGHT)
+            .setTitle("Tap an app to unhide")
+            .setItems(names, (dialog, which) -> {
+                Set<String> h = getHidden();
+                h.remove(list.get(which).activityInfo.packageName);
+                saveHidden(h);
+                refreshAll();
+            })
+            .setNegativeButton("Close", null)
+            .show();
+    }
+
+    private void showRename(final ResolveInfo info) {
+        final String pkg = info.activityInfo.packageName;
+        final EditText input = new EditText(this);
+        input.setSingleLine(true);
+        input.setTextColor(0xFF111111);
+        input.setText(labelOf(info));
+        input.setSelectAllOnFocus(true);
+        new AlertDialog.Builder(this, AlertDialog.THEME_DEVICE_DEFAULT_LIGHT)
+            .setTitle("Rename app")
+            .setView(input)
+            .setPositiveButton("Save", (dialog, which) -> {
+                String t = input.getText().toString().trim();
+                if (t.length() == 0) {
+                    prefs.edit().remove("name:" + pkg).apply();
+                } else {
+                    prefs.edit().putString("name:" + pkg, t).apply();
+                }
+                refreshAll();
+            })
+            .setNeutralButton("Reset", (dialog, which) -> {
+                prefs.edit().remove("name:" + pkg).apply();
+                refreshAll();
+            })
+            .setNegativeButton("Cancel", null)
+            .show();
     }
 
     private void refreshFavorites() {
@@ -332,7 +437,7 @@ public class MainActivity extends Activity {
             LinearLayout.LayoutParams ilp = new LinearLayout.LayoutParams(dp(48), dp(48));
 
             TextView tv = new TextView(this);
-            tv.setText(info.loadLabel(pm));
+            tv.setText(labelOf(info));
             tv.setTextColor(0xFFFFFFFF);
             tv.setTextSize(22);
             tv.setShadowLayer(6, 0, 0, 0x88000000);
@@ -443,10 +548,18 @@ public class MainActivity extends Activity {
     private void showMenu(final ResolveInfo info) {
         final String pkg = info.activityInfo.packageName;
         final boolean isFav = getFavorites().contains(pkg);
-        showSheet(info.loadIcon(pm), info.loadLabel(pm),
-            new String[] { isFav ? "Remove from favourites" : "Favourite", "App info", "Uninstall" },
+        showSheet(info.loadIcon(pm), labelOf(info),
+            new String[] {
+                isFav ? "Remove from favourites" : "Favourite",
+                "Rename",
+                "Hide from app list",
+                "App info",
+                "Uninstall"
+            },
             new int[] {
                 isFav ? android.R.drawable.btn_star_big_on : android.R.drawable.btn_star_big_off,
+                android.R.drawable.ic_menu_edit,
+                android.R.drawable.ic_menu_view,
                 android.R.drawable.ic_menu_info_details,
                 android.R.drawable.ic_menu_delete
             },
@@ -456,6 +569,18 @@ public class MainActivity extends Activity {
                     if (isFav) favs.remove(pkg); else favs.add(pkg);
                     saveFavorites(favs);
                     refreshFavorites();
+                    if (letterOverlay.getVisibility() == View.VISIBLE && STAR.equals(currentKey)) {
+                        currentKey = "";
+                        showKey(STAR);
+                    }
+                },
+                () -> showRename(info),
+                () -> {
+                    Set<String> h = getHidden();
+                    h.add(pkg);
+                    saveHidden(h);
+                    refreshAll();
+                    Toast.makeText(this, "Hidden. Clock long-press > Hidden apps to show again", Toast.LENGTH_LONG).show();
                 },
                 () -> {
                     Intent i = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
@@ -574,7 +699,7 @@ public class MainActivity extends Activity {
         searchApps.clear();
         for (int i = 0; i < installedApps.size(); i++) {
             ResolveInfo info = installedApps.get(i);
-            String label = info.loadLabel(pm).toString().toLowerCase();
+            String label = labelOf(info).toLowerCase();
             if (query.length() == 0 || label.contains(query)) {
                 searchApps.add(info);
             }

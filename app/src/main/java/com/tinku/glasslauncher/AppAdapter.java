@@ -1,6 +1,7 @@
 package com.tinku.glasslauncher;
 
 import android.content.Context;
+import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.view.LayoutInflater;
@@ -28,6 +29,15 @@ public class AppAdapter extends BaseAdapter {
         this.layoutRes = layoutRes;
     }
 
+    public static String labelOf(Context ctx, ResolveInfo info) {
+        SharedPreferences p = ctx.getSharedPreferences("tinku", Context.MODE_PRIVATE);
+        String custom = p.getString("name:" + info.activityInfo.packageName, null);
+        if (custom != null && custom.trim().length() > 0) {
+            return custom;
+        }
+        return info.loadLabel(ctx.getPackageManager()).toString();
+    }
+
     @Override
     public int getCount() {
         return apps.size();
@@ -53,7 +63,7 @@ public class AppAdapter extends BaseAdapter {
         ImageView icon = convertView.findViewById(R.id.imageViewAppIcon);
         TextView name = convertView.findViewById(R.id.textViewAppName);
 
-        name.setText(info.loadLabel(pm));
+        name.setText(labelOf(context, info));
         icon.setImageDrawable(info.loadIcon(pm));
 
         return convertView;
