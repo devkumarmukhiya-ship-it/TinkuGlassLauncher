@@ -19,12 +19,14 @@ import android.net.Uri;
 import android.content.BroadcastReceiver;
 import android.content.IntentFilter;
 import android.util.TypedValue;
+import android.os.BatteryManager;
 import android.os.Build;
 import android.os.Bundle;
 import android.provider.Settings;
 import android.text.Editable;
 import android.text.TextUtils;
 import android.text.TextWatcher;
+import android.view.GestureDetector;
 import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
@@ -245,6 +247,7 @@ public class MainActivity extends Activity {
 
         setupV7();
         setupV8();
+        setupGestures();
         setupAlphabetTouch();
         buildAlphabetBar();
         applyClockStyle();
@@ -256,6 +259,8 @@ public class MainActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
+        refreshWeather(false);
+        refreshInfo();
         loadApps();
         buildAlphabetBar();
         applyClockStyle();
@@ -422,11 +427,32 @@ public class MainActivity extends Activity {
     }
 
     private Drawable glassPanel(boolean blur) {
+        String glass = prefs.getString("glass", "clear");
+        int a;
+        int b;
+        int line;
+        if (!blur) {
+            a = 0xE62C3340;
+            b = 0xCC2C3340;
+            line = 0x1FFFFFFF;
+        } else if ("dark".equals(glass)) {
+            a = 0x99202632;
+            b = 0x77202632;
+            line = 0x33FFFFFF;
+        } else if ("light".equals(glass)) {
+            a = 0x66FFFFFF;
+            b = 0x4DFFFFFF;
+            line = 0x66FFFFFF;
+        } else {
+            a = 0x00000000;
+            b = 0x00000000;
+            line = 0x33FFFFFF;
+        }
         GradientDrawable g = new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,
-            new int[] { 0x00000000, 0x00000000 });
+            new int[] { a, b });
         float rr = dp(30);
         g.setCornerRadii(new float[] { 0, 0, rr, rr, rr, rr, 0, 0 });
-        g.setStroke(dp(1), 0x1FFFFFFF);
+        g.setStroke(dp(1), line);
         return g;
     }
 
@@ -526,6 +552,8 @@ public class MainActivity extends Activity {
             .format(now).toUpperCase(java.util.Locale.ENGLISH);
         String date = new java.text.SimpleDateFormat("dd/MM/yyyy", java.util.Locale.ENGLISH).format(now);
         String text = day + "\n" + date;
+        String extra = extraInfo();
+        if (extra.length() > 0) text += "\n" + extra;
         infoTop.setText(text);
         infoBottom.setText(text);
         boolean top = !"bottom".equals(prefs.getString("dateslot", "top"));
@@ -549,6 +577,175 @@ public class MainActivity extends Activity {
             // already gone
         }
         infoReceiver = null;
+    }
+
+    // ===== Step 9: weather, battery line, swipe gestures =====
+    private boolean weatherBusy = false;
+    private GestureDetector gestures;
+
+    private int batteryPercent() {
+        try {
+            Intent b = registerReceiver(null, new IntentFilter(Intent.ACTION_BATTERY_CHANGED));
+            if (b == null) return -1;
+            int level = b.getIntExtra(BatteryManager.EXTRA_LEVEL, -1);
+            int scale = b.getIntExtra(BatteryManager.EXTRA_SCALE, -1);
+            return scale > 0 ? (level * 100) / scale : -1;
+        } catch (Exception e) {
+            return -1;
+        }
+    }
+
+    private String extraInfo() {
+        StringBuilder sb = new StringBuilder();
+        if (prefs.getBoolean("weather", false)) {
+            String t = prefs.getString("wtext", null);
+            sb.append(t != null ? t.toUpperCase(java.util.Locale.ENGLISH) : "WEATHER...");
+        }
+        if (prefs.getBoolean("showbat", false)) {
+            int pct = batteryPercent();
+            if (pct >= 0) {
+                if (sb.length() > 0) sb.append("\n");
+                sb.append("BATTERY ").append(pct).append("%");
+            }
+        }
+        return sb.toString();
+    }
+
+    private void refreshWeather(boolean force) {
+        if (!prefs.getBoolean("weather", false) || weatherBusy) return;
+        long now = System.currentTimeMillis();
+        if (!force && now - prefs.getLong("wtime", 0L) < 30L * 60L * 1000L) return;
+        weatherBusy = true;
+        final String city = prefs.getString("wcity", "Kathmandu");
+        final boolean fahrenheit = "f".equals(prefs.getString("wunit", "c"));
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                final String text = Weather.fetch(prefs, city, fahrenheit);
+                runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        weatherBusy = false;
+                        if (text != null) {
+                            prefs.edit().putString("wtext", text)
+                                .putLong("wtime", System.currentTimeMillis()).apply();
+                        } else if (prefs.getString("wtext", null) == null) {
+                            prefs.edit().putString("wtext", "Weather unavailable").apply();
+                        }
+                        refreshInfo();
+                    }
+                });
+            }
+        }).start();
+    }
+
+    private void showCityDialog() {
+        final Dialog d = new Dialog(this);
+        d.requestWindowFeature(Window.FEATURE_NO_TITLE);
+
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(dp(24), dp(22), dp(24), dp(24));
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(0xFFF1F1F1);
+        float r = dp(28);
+        bg.setCornerRadii(new float[] { r, r, r, r, 0, 0, 0, 0 });
+        box.setBackground(bg);
+
+        TextView title = new TextView(this);
+        title.setText("Weather city");
+        title.setTextColor(0xFF111111);
+        title.setTextSize(22);
+        title.setPadding(0, 0, 0, dp(14));
+        box.addView(title);
+
+        final EditText input = new EditText(this);
+        input.setSingleLine(true);
+        input.setTextColor(0xFF111111);
+        input.setTextSize(20);
+        input.setText(prefs.getString("wcity", "Kathmandu"));
+        input.setSelectAllOnFocus(true);
+        GradientDrawable ibg = new GradientDrawable();
+        ibg.setColor(0xFFFFFFFF);
+        ibg.setCornerRadius(dp(14));
+        ibg.setStroke(dp(1), 0xFFB0B0B0);
+        input.setBackground(ibg);
+        input.setPadding(dp(16), dp(12), dp(16), dp(12));
+        box.addView(input, new LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        LinearLayout buttons = new LinearLayout(this);
+        buttons.setOrientation(LinearLayout.HORIZONTAL);
+        buttons.setGravity(Gravity.RIGHT);
+        buttons.setPadding(0, dp(18), 0, 0);
+        TextView cancel = makeButton("Cancel", 0xFF00695C, 0x00000000);
+        TextView save = makeButton("Save", 0xFFFFFFFF, 0xFF00796B);
+        buttons.addView(cancel);
+        buttons.addView(save);
+        box.addView(buttons, new LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        cancel.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                d.dismiss();
+            }
+        });
+        save.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                String t = input.getText().toString().trim();
+                if (t.length() > 0) {
+                    prefs.edit().putString("wcity", t).remove("wtext").remove("wtime").apply();
+                    refreshInfo();
+                    refreshWeather(true);
+                }
+                d.dismiss();
+            }
+        });
+
+        d.setContentView(box);
+        Window w = d.getWindow();
+        w.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+        w.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        w.setGravity(Gravity.BOTTOM);
+        w.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE
+            | WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
+        d.show();
+        input.requestFocus();
+    }
+
+    private void setupGestures() {
+        gestures = new GestureDetector(this, new GestureDetector.SimpleOnGestureListener() {
+            @Override
+            public boolean onFling(MotionEvent e1, MotionEvent e2, float vx, float vy) {
+                if (e1 == null || e2 == null) return false;
+                if (!prefs.getBoolean("gestures", false)) return false;
+                if (dragMode || isDrawerOpen()) return false;
+                if (searchOverlay.getVisibility() == View.VISIBLE) return false;
+                if (lockView != null && lockView.getVisibility() == View.VISIBLE) return false;
+                if (e1.getRawX() > getResources().getDisplayMetrics().widthPixels - dp(72)) return false;
+                float dy = e2.getY() - e1.getY();
+                float dx = e2.getX() - e1.getX();
+                if (Math.abs(dy) < dp(120) || Math.abs(dy) < Math.abs(dx) * 1.5f) return false;
+                if (dy > 0) {
+                    expandNotifications();
+                } else {
+                    showSearch();
+                }
+                return true;
+            }
+        });
+    }
+
+    private void expandNotifications() {
+        try {
+            Object sb = getSystemService("statusbar");
+            Class<?> c = Class.forName("android.app.StatusBarManager");
+            c.getMethod("expandNotificationsPanel").invoke(sb);
+        } catch (Throwable t) {
+            Toast.makeText(this, "Could not open the notification panel", Toast.LENGTH_SHORT).show();
+        }
     }
 
     private int dp(int v) {
@@ -674,6 +871,7 @@ public class MainActivity extends Activity {
             handleDrag(e);
             return true;
         }
+        if (gestures != null) gestures.onTouchEvent(e);
         return super.dispatchTouchEvent(e);
     }
 
@@ -886,8 +1084,58 @@ public class MainActivity extends Activity {
             new String[] { "free", "vertical", "horizontal" },
             new String[] { "Free", "Vertical line", "Horizontal line" },
             () -> refreshFavorites());
+        addChoiceRow(box, "App list glass", "glass", "clear",
+            new String[] { "clear", "light", "dark" },
+            new String[] { "Clear", "Light", "Dark" },
+            () -> {});
+        addChoiceRow(box, "Blur strength", "blurstr", "medium",
+            new String[] { "soft", "medium", "strong" },
+            new String[] { "Soft", "Medium", "Strong" },
+            () -> {});
+        addSwitchRow(box, "Show weather under the date", "weather", () -> {
+            refreshInfo();
+            refreshWeather(false);
+        });
+        TextView cityRow = new TextView(this);
+        cityRow.setText("Weather city: " + prefs.getString("wcity", "Kathmandu") + "  \u203A");
+        cityRow.setTextColor(0xFF111111);
+        cityRow.setTextSize(18);
+        cityRow.setPadding(0, dp(12), 0, dp(12));
+        cityRow.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                d.dismiss();
+                showCityDialog();
+            }
+        });
+        box.addView(cityRow);
+        addChoiceRow(box, "Temperature unit", "wunit", "c",
+            new String[] { "c", "f" },
+            new String[] { "\u00B0C", "\u00B0F" },
+            () -> {
+                prefs.edit().remove("wtext").remove("wtime").apply();
+                refreshInfo();
+                refreshWeather(true);
+            });
+        addSwitchRow(box, "Show battery % under the date", "showbat", () -> refreshInfo());
+        addSwitchRow(box, "Swipe gestures (down = notifications, up = search)", "gestures", () -> {});
 
-        d.setContentView(box);
+        boolean blurOk = false;
+        if (Build.VERSION.SDK_INT >= 31) {
+            WindowManager wmx = (WindowManager) getSystemService(Context.WINDOW_SERVICE);
+            blurOk = wmx != null && wmx.isCrossWindowBlurEnabled();
+        }
+        TextView blurInfo = new TextView(this);
+        blurInfo.setText("Blur on this phone: " + (blurOk ? "working" : "not available")
+            + " (Android " + Build.VERSION.RELEASE + ")");
+        blurInfo.setTextColor(0xFF555555);
+        blurInfo.setTextSize(14);
+        blurInfo.setPadding(0, dp(14), 0, 0);
+        box.addView(blurInfo);
+
+        ScrollView sv = new ScrollView(this);
+        sv.addView(box);
+        d.setContentView(sv);
         Window w = d.getWindow();
         w.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
         w.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -1456,13 +1704,18 @@ public class MainActivity extends Activity {
             WindowManager wm = (WindowManager) getSystemService(Context.WINDOW_SERVICE);
             blur = wm != null && wm.isCrossWindowBlurEnabled();
         }
+        String strength = prefs.getString("blurstr", "medium");
+        int radius = "soft".equals(strength) ? 60 : ("strong".equals(strength) ? 200 : 120);
         if (blur) {
             w.setBackgroundDrawable(glassPanel(true));
-            w.setBackgroundBlurRadius(160);
+            w.setBackgroundBlurRadius(radius);
         } else {
             w.setBackgroundDrawable(glassPanel(false));
         }
         drawerDialog.show();
+        letterOverlay.setAlpha(0f);
+        letterOverlay.setTranslationX(-dp(28));
+        letterOverlay.animate().alpha(1f).translationX(0f).setDuration(200).start();
     }
 
     @Override
