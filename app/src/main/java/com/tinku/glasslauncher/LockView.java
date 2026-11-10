@@ -1,5 +1,6 @@
 package com.tinku.glasslauncher;
 
+// STEP11
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
@@ -22,14 +23,14 @@ import java.util.Calendar;
 import java.util.Date;
 import java.util.Locale;
 
-/** Black lock screen: hour, minute pill, running second wheel, date + day, battery. */
+/** Lock screen like the video: hour in the middle of a ring, minute pill on the ring,
+ *  second numbers + ticks running around it, date + day on the right, battery at the bottom. */
 public class LockView extends View {
     private final Paint hourPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint numPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint tickPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint pillPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint pillText = new Paint(Paint.ANTI_ALIAS_FLAG);
-    private final Paint secPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint datePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint battStroke = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint battFill = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -43,7 +44,6 @@ public class LockView extends View {
     private float downY;
     private boolean unlocking = false;
 
-    // cache (har frame ma dobara nikaalnu pardaina)
     private int cachedDay = -1;
     private String dateStr = "";
     private String dayStr = "";
@@ -70,12 +70,10 @@ public class LockView extends View {
 
         hourPaint.setColor(Color.WHITE);
         hourPaint.setTypeface(medium);
-        hourPaint.setTextSize(sp(78));
-        hourPaint.setTextAlign(Paint.Align.RIGHT);
+        hourPaint.setTextAlign(Paint.Align.CENTER);
 
         numPaint.setColor(Color.WHITE);
         numPaint.setTypeface(medium);
-        numPaint.setTextSize(sp(13));
         numPaint.setTextAlign(Paint.Align.CENTER);
 
         tickPaint.setColor(Color.WHITE);
@@ -88,13 +86,7 @@ public class LockView extends View {
 
         pillText.setColor(Color.WHITE);
         pillText.setTypeface(medium);
-        pillText.setTextSize(sp(21));
         pillText.setTextAlign(Paint.Align.CENTER);
-
-        secPaint.setColor(Color.WHITE);
-        secPaint.setTypeface(medium);
-        secPaint.setTextSize(sp(12));
-        secPaint.setTextAlign(Paint.Align.CENTER);
 
         datePaint.setColor(Color.WHITE);
         datePaint.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
@@ -201,7 +193,6 @@ public class LockView extends View {
         int hour = cal.get(is24 ? Calendar.HOUR_OF_DAY : Calendar.HOUR);
         if (!is24 && hour == 0) hour = 12;
         int min = cal.get(Calendar.MINUTE);
-        // chaldo second (smooth): wheel har second 6 degree ghumchha
         float sec = cal.get(Calendar.SECOND) + cal.get(Calendar.MILLISECOND) / 1000f;
 
         int dayKey = cal.get(Calendar.YEAR) * 400 + cal.get(Calendar.DAY_OF_YEAR);
@@ -212,65 +203,69 @@ public class LockView extends View {
             dayStr = dayFmt.format(d).toUpperCase(Locale.ENGLISH);
         }
 
-        float R = w * 0.26f;
-        float pillW = dp(86);
-        float pillH = dp(36);
+        // sabai size screen ko chaudai anusar (video jasto compact)
+        float R = w * 0.18f;
+        float pillW = w * 0.19f;
+        float pillH = w * 0.092f;
         float cy = h * 0.44f;
-        float pillX = w * 0.5f;
-        // wheel ko "abhi ko second" pill ko bhitra, dayan kona ma pugchha (video jasto)
-        float pointerX = pillX + pillW / 2f - dp(20);
-        float cx = pointerX - R;
+        hourPaint.setTextSize(w * 0.125f);
+        pillText.setTextSize(w * 0.056f);
+        numPaint.setTextSize(w * 0.034f);
+
+        float tickR = R + pillW / 2f + dp(8);
+        float hourW = hourPaint.measureText("00");
+        float tw = Math.max(datePaint.measureText(dateStr), datePaint.measureText(dayStr));
+
+        // pura group (hour + ring + date) screen ko bich ma
+        float leftExt = Math.max(hourW / 2f, tickR * 0.3f);
+        float rightExt = tickR + dp(8) + dp(16) + tw;
+        float cx = (w - (leftExt + rightExt)) / 2f + leftExt;
+        float pillX = cx + R;
 
         // ticks (60 ota, har second ko ek)
-        float tickR = R + dp(26);
         for (int i = 0; i < 60; i++) {
             float deg = wrap(i - sec) * 6f;
-            if (Math.abs(deg) > 105f) continue;
+            if (Math.abs(deg) > 120f) continue;
             double a = Math.toRadians(deg);
             float cos = (float) Math.cos(a);
             float sin = (float) Math.sin(a);
             boolean major = (i % 5 == 0);
-            float len = major ? dp(9) : dp(4.5f);
-            float fade = Math.max(0.12f, 1f - Math.abs(deg) / 120f);
+            float len = major ? dp(8) : dp(4);
+            float fade = Math.max(0.1f, 1f - Math.abs(deg) / 135f);
             tickPaint.setAlpha((int) (255 * fade * (major ? 1f : 0.7f)));
             canvas.drawLine(cx + tickR * cos, cy - tickR * sin,
                 cx + (tickR + len) * cos, cy - (tickR + len) * sin, tickPaint);
         }
 
-        // second numbers (00, 05 ... 55)
+        // second numbers pill ko nai ring ma
         for (int v = 0; v < 60; v += 5) {
             float d = wrap(v - sec);
             if (Math.abs(d) < 3.4f) continue;
             float deg = d * 6f;
-            if (Math.abs(deg) > 100f) continue;
+            if (Math.abs(deg) > 105f) continue;
             double a = Math.toRadians(deg);
             float px = cx + R * (float) Math.cos(a);
             float py = cy - R * (float) Math.sin(a);
-            float fade = Math.max(0.15f, 1f - Math.abs(deg) / 115f);
+            float fade = Math.max(0.15f, 1f - Math.abs(deg) / 120f);
             numPaint.setAlpha((int) (255 * fade));
             canvas.drawText(two(v), px, centerBaseline(numPaint, py), numPaint);
         }
 
-        // minute pill (fixed)
+        // minute pill
         rect.set(pillX - pillW / 2f, cy - pillH / 2f, pillX + pillW / 2f, cy + pillH / 2f);
         canvas.drawRoundRect(rect, pillH / 2f, pillH / 2f, pillPaint);
-        canvas.drawText(two(min), pillX - dp(10), centerBaseline(pillText, cy), pillText);
-        // abhi ko second (pill bhitra, minute ko dayan tira)
-        secPaint.setAlpha(210);
-        canvas.drawText(two((int) sec), pointerX, centerBaseline(secPaint, cy), secPaint);
+        canvas.drawText(two(min), pillX, centerBaseline(pillText, cy), pillText);
 
-        // hour
-        canvas.drawText(String.valueOf(hour), pillX - pillW / 2f - dp(14),
-            centerBaseline(hourPaint, cy), hourPaint);
+        // hour (ring ko bich ma)
+        canvas.drawText(String.valueOf(hour), cx, centerBaseline(hourPaint, cy), hourPaint);
 
         // date + day
-        float tw = Math.max(datePaint.measureText(dateStr), datePaint.measureText(dayStr));
-        float dateX = pointerX + dp(26) + dp(9) + dp(26);
+        float dateX = cx + tickR + dp(8) + dp(16);
         dateX = Math.min(dateX, w - tw - dp(14));
-        canvas.drawText(dateStr, dateX, cy + dp(8), datePaint);
-        canvas.drawText(dayStr, dateX, cy + dp(24), datePaint);
+        canvas.drawText(dateStr, dateX, cy + dp(6), datePaint);
+        canvas.drawText(dayStr, dateX, cy + dp(20), datePaint);
 
-        // battery (har 20 second ma matra padhne)
+        // battery
         if (nowMs - lastBattMs > 20000 || battPct < 0) {
             lastBattMs = nowMs;
             Intent b = getContext().registerReceiver(null, new IntentFilter(Intent.ACTION_BATTERY_CHANGED));
@@ -287,7 +282,7 @@ public class LockView extends View {
             float bh = dp(14);
             float total = bw + dp(8) + battText.measureText(t);
             float bx = (w - total) / 2f;
-            float by = h * 0.9f;
+            float by = h * 0.86f;
             rect.set(bx, by - bh / 2f, bx + bw, by + bh / 2f);
             canvas.drawRoundRect(rect, dp(2), dp(2), battStroke);
             rect.set(bx + bw * 0.3f, by - bh / 2f - dp(1.5f), bx + bw * 0.7f, by - bh / 2f);

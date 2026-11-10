@@ -323,6 +323,7 @@ public class MainActivity extends Activity {
 
         // wallpaper mathi halka dark gradient (text spasta dekhincha)
         View scrim = new View(this);
+        scrim.setVisibility(View.GONE);
         scrim.setBackground(new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
             new int[] { 0x00000000, 0x00000000, 0x00000000 }));
         rootFrame.addView(scrim, 0, new FrameLayout.LayoutParams(
