@@ -93,7 +93,7 @@ public class DrawerAdapter extends BaseAdapter {
             } else {
                 tv = new TextView(context);
                 tv.setTextColor(0x99FFFFFF);
-                tv.setTextSize(52);
+                tv.setTextSize(44);
                 tv.setTypeface(Typeface.create("sans-serif-thin", Typeface.NORMAL));
                 tv.setGravity(Gravity.LEFT);
                 float d = context.getResources().getDisplayMetrics().density;
@@ -110,6 +110,15 @@ public class DrawerAdapter extends BaseAdapter {
         }
         ImageView icon = convertView.findViewById(R.id.imageViewAppIcon);
         TextView name = convertView.findViewById(R.id.textViewAppName);
+        float dn = context.getResources().getDisplayMetrics().density;
+        ViewGroup.LayoutParams ilp = icon.getLayoutParams();
+        ilp.width = (int) (40 * dn);
+        ilp.height = (int) (40 * dn);
+        icon.setLayoutParams(ilp);
+        name.setTextSize(17);
+        name.setPadding((int) (14 * dn), 0, 0, 0);
+        name.setSingleLine(false);
+        name.setMaxLines(2);
         name.setText(AppAdapter.labelOf(context, row.app));
         icon.setImageDrawable(AppAdapter.iconOf(context, row.app));
         return convertView;

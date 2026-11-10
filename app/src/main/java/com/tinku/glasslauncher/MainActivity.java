@@ -3,17 +3,20 @@ package com.tinku.glasslauncher;
 import android.app.Activity;
 import android.app.Dialog;
 import android.content.Context;
+import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.graphics.Color;
+import android.graphics.PixelFormat;
 import android.graphics.PorterDuff;
 import android.graphics.Typeface;
 import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.provider.Settings;
 import android.text.Editable;
@@ -66,6 +69,7 @@ public class MainActivity extends Activity {
     private TextClock textClock;
     private TextClock textDate;
     private FrameLayout letterOverlay;
+    private Dialog drawerDialog;
     private TextView textLetter;
     private List<ResolveInfo> allApps = new ArrayList<ResolveInfo>();
     private List<ResolveInfo> installedApps = new ArrayList<ResolveInfo>();
@@ -147,6 +151,13 @@ public class MainActivity extends Activity {
             @Override
             public void onClick(View v) {
                 hideOverlay();
+            }
+        });
+        setupDrawerDialog();
+        rootFrame.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                if (isDrawerOpen()) hideOverlay();
             }
         });
 
@@ -295,7 +306,7 @@ public class MainActivity extends Activity {
         loadApps();
         buildAlphabetBar();
         refreshFavorites();
-        if (letterOverlay.getVisibility() == View.VISIBLE) {
+        if (isDrawerOpen()) {
             listViewLetter.setSelectionFromTop(first, top);
         }
         if (searchOverlay.getVisibility() == View.VISIBLE) {
@@ -333,6 +344,10 @@ public class MainActivity extends Activity {
 
     private boolean isFavLeft() {
         return "left".equals(prefs.getString("favalign", "left"));
+    }
+
+    private boolean isFavLine() {
+        return !"free".equals(prefs.getString("favlayout", "free"));
     }
 
     private boolean hasFavPos(String pkg) {
@@ -423,6 +438,10 @@ public class MainActivity extends Activity {
     }
 
     private void startDragFav(ResolveInfo info, View row) {
+        if (isFavLine()) {
+            startDrag(favoritesBox, "fx", "fy");
+            return;
+        }
         String pkg = info.activityInfo.packageName;
         String kx = "fpx:" + pkg;
         String ky = "fpy:" + pkg;
@@ -512,6 +531,53 @@ public class MainActivity extends Activity {
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
     }
 
+    private void styleChips(List<TextView> chips, String[] values, String key, String def) {
+        String cur = prefs.getString(key, def);
+        for (int i = 0; i < chips.size(); i++) {
+            boolean on = values[i].equals(cur);
+            GradientDrawable g = new GradientDrawable();
+            g.setCornerRadius(dp(20));
+            g.setColor(on ? 0xFF00796B : 0xFFDDDDDD);
+            chips.get(i).setBackground(g);
+            chips.get(i).setTextColor(on ? 0xFFFFFFFF : 0xFF111111);
+        }
+    }
+
+    private void addChoiceRow(LinearLayout box, String label, final String key, final String def,
+                              final String[] values, String[] names, final Runnable onChange) {
+        TextView tv = new TextView(this);
+        tv.setText(label);
+        tv.setTextColor(0xFF111111);
+        tv.setTextSize(18);
+        tv.setPadding(0, dp(12), 0, dp(8));
+        box.addView(tv);
+
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        final List<TextView> chips = new ArrayList<TextView>();
+        for (int i = 0; i < values.length; i++) {
+            final String v = values[i];
+            TextView c = new TextView(this);
+            c.setText(names[i]);
+            c.setTextSize(15);
+            c.setGravity(Gravity.CENTER);
+            c.setPadding(dp(10), dp(10), dp(10), dp(10));
+            c.setOnClickListener(x -> {
+                prefs.edit().putString(key, v).apply();
+                styleChips(chips, values, key, def);
+                onChange.run();
+            });
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+            lp.rightMargin = dp(8);
+            row.addView(c, lp);
+            chips.add(c);
+        }
+        styleChips(chips, values, key, def);
+        box.addView(row, new LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+    }
+
     private void showSettings() {
         final Dialog d = new Dialog(this);
         d.requestWindowFeature(Window.FEATURE_NO_TITLE);
@@ -534,6 +600,10 @@ public class MainActivity extends Activity {
 
         addSwitchRow(box, "Monochrome icons", "mono", () -> refreshAll());
         addSwitchRow(box, "Stacked clock (hour over minute)", "stacked", () -> applyClockStyle());
+        addChoiceRow(box, "Favourites layout", "favlayout", "free",
+            new String[] { "free", "vertical", "horizontal" },
+            new String[] { "Free", "Vertical line", "Horizontal line" },
+            () -> refreshFavorites());
 
         d.setContentView(box);
         Window w = d.getWindow();
@@ -568,8 +638,10 @@ public class MainActivity extends Activity {
                     for (String k : prefs.getAll().keySet()) {
                         if (k.startsWith("fpx:") || k.startsWith("fpy:")) ed.remove(k);
                     }
+                    ed.remove("fx").remove("fy");
                     ed.apply();
                     refreshFavorites();
+                    applyFavPos();
                 },
                 () -> showHiddenApps()
             });
@@ -714,6 +786,10 @@ public class MainActivity extends Activity {
         }
         floatingFavs.clear();
         favoritesBox.removeAllViews();
+        String layout = prefs.getString("favlayout", "free");
+        final boolean line = !"free".equals(layout);
+        final boolean horiz = "horizontal".equals(layout);
+        favoritesBox.setOrientation(horiz ? LinearLayout.HORIZONTAL : LinearLayout.VERTICAL);
         Set<String> favs = getFavorites();
         boolean left = isFavLeft();
         for (int i = 0; i < installedApps.size(); i++) {
@@ -722,10 +798,6 @@ public class MainActivity extends Activity {
             if (!favs.contains(pkg)) continue;
 
             final LinearLayout row = new LinearLayout(this);
-            row.setOrientation(LinearLayout.HORIZONTAL);
-            row.setGravity(Gravity.CENTER_VERTICAL | (left ? Gravity.LEFT : Gravity.RIGHT));
-            row.setPadding(0, dp(8), 0, dp(8));
-
             ImageView iv = new ImageView(this);
             iv.setImageDrawable(AppAdapter.iconOf(this, info));
             LinearLayout.LayoutParams ilp = new LinearLayout.LayoutParams(dp(48), dp(48));
@@ -733,20 +805,35 @@ public class MainActivity extends Activity {
             TextView tv = new TextView(this);
             tv.setText(labelOf(info));
             tv.setTextColor(0xFFFFFFFF);
-            tv.setTextSize(22);
             tv.setShadowLayer(6, 0, 0, 0x88000000);
             tv.setSingleLine(true);
             tv.setEllipsize(TextUtils.TruncateAt.END);
-            tv.setMaxWidth(dp(240));
 
-            if (left) {
-                tv.setPadding(dp(16), 0, 0, 0);
+            if (horiz) {
+                row.setOrientation(LinearLayout.VERTICAL);
+                row.setGravity(Gravity.CENTER_HORIZONTAL);
+                row.setPadding(dp(8), dp(8), dp(8), dp(8));
+                tv.setTextSize(12);
+                tv.setMaxWidth(dp(72));
+                tv.setGravity(Gravity.CENTER);
+                tv.setPadding(0, dp(4), 0, 0);
                 row.addView(iv, ilp);
                 row.addView(tv);
             } else {
-                tv.setPadding(0, 0, dp(16), 0);
-                row.addView(tv);
-                row.addView(iv, ilp);
+                row.setOrientation(LinearLayout.HORIZONTAL);
+                row.setGravity(Gravity.CENTER_VERTICAL | (left ? Gravity.LEFT : Gravity.RIGHT));
+                row.setPadding(0, dp(8), 0, dp(8));
+                tv.setTextSize(22);
+                tv.setMaxWidth(dp(240));
+                if (left) {
+                    tv.setPadding(dp(16), 0, 0, 0);
+                    row.addView(iv, ilp);
+                    row.addView(tv);
+                } else {
+                    tv.setPadding(0, 0, dp(16), 0);
+                    row.addView(tv);
+                    row.addView(iv, ilp);
+                }
             }
 
             row.setOnClickListener(new View.OnClickListener() {
@@ -762,7 +849,7 @@ public class MainActivity extends Activity {
                     return true;
                 }
             });
-            if (hasFavPos(pkg)) {
+            if (!line && hasFavPos(pkg)) {
                 addFloatingFav(row, pkg);
             } else {
                 favoritesBox.addView(row, new LinearLayout.LayoutParams(
@@ -871,15 +958,21 @@ public class MainActivity extends Activity {
         List<Runnable> actions = new ArrayList<Runnable>();
 
         if (homeRow != null) {
-            labels.add("Drag anywhere");
+            final boolean line = isFavLine();
+            labels.add(line ? "Move all favourites" : "Drag anywhere");
             icons.add(android.R.drawable.ic_menu_mylocation);
             actions.add(() -> startDragFav(info, homeRow));
-            if (hasFavPos(pkg)) {
+            if (line ? prefs.contains("fx") : hasFavPos(pkg)) {
                 labels.add("Reset position");
                 icons.add(android.R.drawable.ic_menu_revert);
                 actions.add(() -> {
-                    prefs.edit().remove("fpx:" + pkg).remove("fpy:" + pkg).apply();
-                    refreshFavorites();
+                    if (line) {
+                        prefs.edit().remove("fx").remove("fy").apply();
+                        applyFavPos();
+                    } else {
+                        prefs.edit().remove("fpx:" + pkg).remove("fpy:" + pkg).apply();
+                        refreshFavorites();
+                    }
                 });
             }
         }
@@ -1031,17 +1124,75 @@ public class MainActivity extends Activity {
     }
 
     private void showKey(String key) {
-        if (key.equals(currentKey) && letterOverlay.getVisibility() == View.VISIBLE) {
+        if (key.equals(currentKey) && isDrawerOpen()) {
             return;
         }
         currentKey = key;
-        letterOverlay.setVisibility(View.VISIBLE);
+        openDrawer();
         Integer pos = sectionPos.get(key);
         if (pos != null) listViewLetter.setSelectionFromTop(pos, 0);
     }
 
+    private boolean isDrawerOpen() {
+        return drawerDialog != null && drawerDialog.isShowing();
+    }
+
+    /** App list lives in its own half-screen window so only that half gets the blur. */
+    private void setupDrawerDialog() {
+        rootFrame.removeView(letterOverlay);
+        letterOverlay.setVisibility(View.VISIBLE);
+        letterOverlay.setBackgroundColor(Color.TRANSPARENT);
+        letterOverlay.setPadding(dp(20), dp(16), dp(8), dp(16));
+
+        drawerDialog = new Dialog(this, android.R.style.Theme_Translucent_NoTitleBar);
+        drawerDialog.setContentView(letterOverlay);
+        drawerDialog.setCanceledOnTouchOutside(false);
+        drawerDialog.setOnDismissListener(new DialogInterface.OnDismissListener() {
+            @Override
+            public void onDismiss(DialogInterface dialog) {
+                currentKey = "";
+            }
+        });
+        Window w = drawerDialog.getWindow();
+        w.setFormat(PixelFormat.TRANSLUCENT);
+        w.addFlags(WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL);
+        w.clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);
+        w.setGravity(Gravity.LEFT | Gravity.TOP);
+        w.setLayout(getResources().getDisplayMetrics().widthPixels / 2,
+            ViewGroup.LayoutParams.MATCH_PARENT);
+    }
+
+    private void openDrawer() {
+        if (isDrawerOpen()) return;
+        Window w = drawerDialog.getWindow();
+        boolean blur = false;
+        if (Build.VERSION.SDK_INT >= 31) {
+            WindowManager wm = (WindowManager) getSystemService(Context.WINDOW_SERVICE);
+            blur = wm != null && wm.isCrossWindowBlurEnabled();
+        }
+        if (blur) {
+            w.setBackgroundDrawable(new ColorDrawable(0x40000000));
+            w.setBackgroundBlurRadius(100);
+        } else {
+            w.setBackgroundDrawable(new ColorDrawable(0x99000000));
+        }
+        drawerDialog.show();
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        hideOverlay();
+    }
+
+    @Override
+    protected void onDestroy() {
+        if (isDrawerOpen()) drawerDialog.dismiss();
+        super.onDestroy();
+    }
+
     private void hideOverlay() {
-        letterOverlay.setVisibility(View.GONE);
+        if (isDrawerOpen()) drawerDialog.dismiss();
         currentKey = "";
     }
 
@@ -1079,7 +1230,7 @@ public class MainActivity extends Activity {
     public void onBackPressed() {
         if (searchOverlay.getVisibility() == View.VISIBLE) {
             hideSearch();
-        } else if (letterOverlay.getVisibility() == View.VISIBLE) {
+        } else if (isDrawerOpen()) {
             hideOverlay();
         }
     }

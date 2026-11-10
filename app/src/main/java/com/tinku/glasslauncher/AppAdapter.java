@@ -4,6 +4,9 @@ import android.content.Context;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
+import android.graphics.Bitmap;
+import android.graphics.Canvas;
+import android.graphics.Color;
 import android.graphics.ColorMatrix;
 import android.graphics.ColorMatrixColorFilter;
 import android.graphics.drawable.AdaptiveIconDrawable;
@@ -16,6 +19,7 @@ import android.view.ViewGroup;
 import android.widget.BaseAdapter;
 import android.widget.ImageView;
 import android.widget.TextView;
+import java.util.HashMap;
 import java.util.List;
 
 public class AppAdapter extends BaseAdapter {
@@ -44,6 +48,42 @@ public class AppAdapter extends BaseAdapter {
         return info.loadLabel(ctx.getPackageManager()).toString();
     }
 
+    private static final HashMap<String, Boolean> GLYPH_CACHE = new HashMap<String, Boolean>();
+
+    /** True when the icon's foreground layer is just a glyph (not a full-bleed picture). */
+    private static boolean foregroundIsGlyph(String key, Drawable fg) {
+        Boolean cached = GLYPH_CACHE.get(key);
+        if (cached != null) return cached;
+        boolean ok = false;
+        try {
+            int n = 108;
+            Bitmap bmp = Bitmap.createBitmap(n, n, Bitmap.Config.ARGB_8888);
+            Canvas cv = new Canvas(bmp);
+            Drawable t = fg;
+            if (fg.getConstantState() != null) {
+                t = fg.getConstantState().newDrawable().mutate();
+            }
+            t.setBounds(0, 0, n, n);
+            t.draw(cv);
+            int lo = 21;
+            int hi = 87;
+            int solid = 0;
+            int total = 0;
+            for (int y = lo; y < hi; y += 3) {
+                for (int x = lo; x < hi; x += 3) {
+                    total++;
+                    if (Color.alpha(bmp.getPixel(x, y)) > 200) solid++;
+                }
+            }
+            bmp.recycle();
+            ok = solid > 0 && total > 0 && (solid / (float) total) < 0.8f;
+        } catch (Throwable e) {
+            ok = false;
+        }
+        GLYPH_CACHE.put(key, ok);
+        return ok;
+    }
+
     /** App icon, optionally turned into a single-colour (monochrome) icon. */
     public static Drawable iconOf(Context ctx, ResolveInfo info) {
         Drawable d = info.loadIcon(ctx.getPackageManager());
@@ -51,12 +91,22 @@ public class AppAdapter extends BaseAdapter {
         if (!p.getBoolean("mono", false)) {
             return d;
         }
-        if (Build.VERSION.SDK_INT >= 33 && d instanceof AdaptiveIconDrawable) {
-            Drawable m = ((AdaptiveIconDrawable) d).getMonochrome();
-            if (m != null) {
-                m = m.mutate();
-                m.setTint(0xFFFFFFFF);
-                return new InsetDrawable(m, -0.2f);
+        if (Build.VERSION.SDK_INT >= 26 && d instanceof AdaptiveIconDrawable) {
+            AdaptiveIconDrawable ai = (AdaptiveIconDrawable) d;
+            if (Build.VERSION.SDK_INT >= 33) {
+                Drawable m = ai.getMonochrome();
+                if (m != null) {
+                    m = m.mutate();
+                    m.setTint(0xFFFFFFFF);
+                    return new InsetDrawable(m, -0.2f);
+                }
+            }
+            Drawable fg = ai.getForeground();
+            String key = info.activityInfo.packageName + "/" + info.activityInfo.name;
+            if (fg != null && foregroundIsGlyph(key, fg)) {
+                Drawable w = fg.mutate();
+                w.setTint(0xFFFFFFFF);
+                return new InsetDrawable(w, -0.2f);
             }
         }
         Drawable g = d.mutate();
