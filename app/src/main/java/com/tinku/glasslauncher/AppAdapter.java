@@ -85,7 +85,16 @@ public class AppAdapter extends BaseAdapter {
     }
 
     /** App icon, optionally turned into a single-colour (monochrome) icon. */
+    public static int tone(Context ctx) {
+        SharedPreferences sp = ctx.getSharedPreferences("tinku", Context.MODE_PRIVATE);
+        return sp.getBoolean("darktext", false) ? 0xFF1B1F27 : 0xFFFFFFFF;
+    }
+
     public static Drawable iconOf(Context ctx, ResolveInfo info) {
+        return iconOf(ctx, info, tone(ctx));
+    }
+
+    public static Drawable iconOf(Context ctx, ResolveInfo info, int tint) {
         Drawable d = info.loadIcon(ctx.getPackageManager());
         SharedPreferences p = ctx.getSharedPreferences("tinku", Context.MODE_PRIVATE);
         if (!p.getBoolean("mono", false)) {
@@ -97,7 +106,7 @@ public class AppAdapter extends BaseAdapter {
                 Drawable m = ai.getMonochrome();
                 if (m != null) {
                     m = m.mutate();
-                    m.setTint(0xFFFFFFFF);
+                    m.setTint(tint);
                     return new InsetDrawable(m, -0.2f);
                 }
             }
@@ -105,7 +114,7 @@ public class AppAdapter extends BaseAdapter {
             String key = info.activityInfo.packageName + "/" + info.activityInfo.name;
             if (fg != null && foregroundIsGlyph(key, fg)) {
                 Drawable w = fg.mutate();
-                w.setTint(0xFFFFFFFF);
+                w.setTint(tint);
                 return new InsetDrawable(w, -0.2f);
             }
         }
@@ -142,7 +151,7 @@ public class AppAdapter extends BaseAdapter {
         TextView name = convertView.findViewById(R.id.textViewAppName);
 
         name.setText(labelOf(context, info));
-        icon.setImageDrawable(iconOf(context, info));
+        icon.setImageDrawable(iconOf(context, info, 0xFFFFFFFF));
 
         return convertView;
     }

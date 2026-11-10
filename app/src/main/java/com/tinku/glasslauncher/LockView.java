@@ -1,9 +1,10 @@
 package com.tinku.glasslauncher;
 
-// STEP12
+// STEP13
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.content.SharedPreferences;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
@@ -22,8 +23,8 @@ import java.util.Calendar;
 import java.util.Date;
 import java.util.Locale;
 
-/** Lock screen like the video: fixed hour on the left, minute wheel (inner ring, pill on it),
- *  second wheel (outer ring + ticks) running, date + day on the right, battery at the bottom. */
+/** Lock screen: fixed hour, minute wheel (pill), second wheel (ticks), date + day, battery.
+ *  Position, size and parts can be changed from Lock screen setup (prefs lock_*). */
 public class LockView extends View {
     private final Paint hourPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint numPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -39,6 +40,8 @@ public class LockView extends View {
     private final GestureDetector detector;
     private final SimpleDateFormat dateFmt = new SimpleDateFormat("d MMM yyyy", Locale.ENGLISH);
     private final SimpleDateFormat dayFmt = new SimpleDateFormat("EEEE", Locale.ENGLISH);
+    private SharedPreferences prefs;
+    private boolean preview = false;
     private VelocityTracker vt;
     private float downY;
     private boolean unlocking = false;
@@ -117,6 +120,24 @@ public class LockView extends View {
         });
     }
 
+    public void setPrefs(SharedPreferences p) {
+        prefs = p;
+        invalidate();
+    }
+
+    /** Preview (Lock screen setup): touch ignore garne, unlock nahune */
+    public void setPreview(boolean on) {
+        preview = on;
+    }
+
+    private float fpref(String k, float d) {
+        return prefs == null ? d : prefs.getFloat(k, d);
+    }
+
+    private boolean bpref(String k, boolean d) {
+        return prefs == null ? d : prefs.getBoolean(k, d);
+    }
+
     private float dp(float v) {
         return TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, v, getResources().getDisplayMetrics());
     }
@@ -138,7 +159,7 @@ public class LockView extends View {
         super.onDetachedFromWindow();
     }
 
-    /** Show the lock screen again (e.g. after screen off). */
+    /** Show the lock screen again. */
     public void showLock() {
         animate().cancel();
         unlocking = false;
@@ -152,7 +173,7 @@ public class LockView extends View {
 
     /** Slide up and reveal the home screen. */
     public void unlock() {
-        if (unlocking || getVisibility() != View.VISIBLE) return;
+        if (preview || unlocking || getVisibility() != View.VISIBLE) return;
         unlocking = true;
         animate().translationY(-getHeight()).alpha(0f).setDuration(240)
             .withEndAction(new Runnable() {
@@ -179,7 +200,6 @@ public class LockView extends View {
         return cy - (fm.ascent + fm.descent) / 2f;
     }
 
-    /** 0 = pill ko chheu ma (nadekhine), 1 = pill bata tada (pura dekhine) */
     private static float bandFade(float deg, float band) {
         return Math.max(0f, Math.min(1f, (Math.abs(deg) - band) / 12f));
     }
@@ -190,6 +210,14 @@ public class LockView extends View {
         int w = getWidth();
         int h = getHeight();
         if (w == 0 || h == 0) return;
+
+        float cyF = fpref("lock_cy", 0.44f);
+        float dxF = fpref("lock_dx", 0f);
+        float sc = fpref("lock_scale", 1f);
+        float byF = fpref("lock_by", 0.86f);
+        boolean showDate = bpref("lock_date", true);
+        boolean showBatt = bpref("lock_batt", true);
+        boolean showSec = bpref("lock_sec", true);
 
         long nowMs = System.currentTimeMillis();
         Calendar cal = Calendar.getInstance();
@@ -206,54 +234,51 @@ public class LockView extends View {
             dayStr = dayFmt.format(d).toUpperCase(Locale.ENGLISH);
         }
 
-        // sabai size screen ko chaudai anusar
-        float R1 = w * 0.18f;   // minute wheel (pill yahi ring ma)
-        float R2 = w * 0.25f;   // second wheel numbers
-        float R3 = w * 0.29f;   // ticks
-        float pillW = w * 0.19f;
-        float pillH = w * 0.092f;
-        float cy = h * 0.44f;
-        hourPaint.setTextSize(w * 0.125f);
-        pillText.setTextSize(w * 0.056f);
-        numPaint.setTextSize(w * 0.03f);
+        float R1 = w * 0.18f * sc;
+        float R2 = w * 0.25f * sc;
+        float R3 = w * 0.29f * sc;
+        float pillW = w * 0.19f * sc;
+        float pillH = w * 0.092f * sc;
+        float cy = h * cyF;
+        hourPaint.setTextSize(w * 0.125f * sc);
+        pillText.setTextSize(w * 0.056f * sc);
+        numPaint.setTextSize(w * 0.03f * sc);
 
         float hourW = hourPaint.measureText("00");
-        float tw = Math.max(datePaint.measureText(dateStr), datePaint.measureText(dayStr));
+        float tw = showDate ? Math.max(datePaint.measureText(dateStr), datePaint.measureText(dayStr)) : 0f;
+        float ringRight = showSec ? (R3 + w * 0.014f * sc) : (R1 + pillW / 2f);
 
-        // pura group (hour + wheels + date) screen ko bich ma
-        float leftExt = Math.max(hourW / 2f, R3 * 0.5f);
-        float rightExt = R3 + w * 0.014f + w * 0.04f + tw;
-        float cx = (w - (leftExt + rightExt)) / 2f + leftExt;
+        float leftExt = Math.max(hourW / 2f, showSec ? R3 * 0.5f : 0f);
+        float rightExt = ringRight + (showDate ? (w * 0.04f * sc + tw) : 0f);
+        float cx = (w - (leftExt + rightExt)) / 2f + leftExt + dxF * w;
         float pillX = cx + R1;
 
-        // ticks (60 ota, har second ko ek) - second wheel
-        for (int i = 0; i < 60; i++) {
-            float deg = wrap(i - sec) * 6f;
-            if (Math.abs(deg) > 125f) continue;
-            double a = Math.toRadians(deg);
-            float cos = (float) Math.cos(a);
-            float sin = (float) Math.sin(a);
-            boolean major = (i % 5 == 0);
-            float len = w * (major ? 0.014f : 0.007f);
-            float fade = Math.max(0.1f, 1f - Math.abs(deg) / 140f);
-            tickPaint.setAlpha((int) (255 * fade * (major ? 1f : 0.7f)));
-            canvas.drawLine(cx + R3 * cos, cy - R3 * sin,
-                cx + (R3 + len) * cos, cy - (R3 + len) * sin, tickPaint);
+        if (showSec) {
+            for (int i = 0; i < 60; i++) {
+                float deg = wrap(i - sec) * 6f;
+                if (Math.abs(deg) > 125f) continue;
+                double a = Math.toRadians(deg);
+                float cos = (float) Math.cos(a);
+                float sin = (float) Math.sin(a);
+                boolean major = (i % 5 == 0);
+                float len = w * (major ? 0.014f : 0.007f) * sc;
+                float fade = Math.max(0.1f, 1f - Math.abs(deg) / 140f);
+                tickPaint.setAlpha((int) (255 * fade * (major ? 1f : 0.7f)));
+                canvas.drawLine(cx + R3 * cos, cy - R3 * sin,
+                    cx + (R3 + len) * cos, cy - (R3 + len) * sin, tickPaint);
+            }
+            for (int v = 0; v < 60; v += 5) {
+                float deg = wrap(v - sec) * 6f;
+                if (Math.abs(deg) > 110f) continue;
+                float alpha = Math.max(0.15f, 1f - Math.abs(deg) / 125f) * bandFade(deg, 15f);
+                if (alpha <= 0f) continue;
+                double a = Math.toRadians(deg);
+                numPaint.setAlpha((int) (255 * alpha));
+                canvas.drawText(two(v), cx + R2 * (float) Math.cos(a),
+                    centerBaseline(numPaint, cy - R2 * (float) Math.sin(a)), numPaint);
+            }
         }
 
-        // second numbers (bahira ring) - har second ghumchha
-        for (int v = 0; v < 60; v += 5) {
-            float deg = wrap(v - sec) * 6f;
-            if (Math.abs(deg) > 110f) continue;
-            float alpha = Math.max(0.15f, 1f - Math.abs(deg) / 125f) * bandFade(deg, 15f);
-            if (alpha <= 0f) continue;
-            double a = Math.toRadians(deg);
-            numPaint.setAlpha((int) (255 * alpha));
-            canvas.drawText(two(v), cx + R2 * (float) Math.cos(a),
-                centerBaseline(numPaint, cy - R2 * (float) Math.sin(a)), numPaint);
-        }
-
-        // minute numbers (bhitri ring) - minute anusar ghumchha
         for (int v = 0; v < 60; v += 5) {
             float deg = wrap(v - minF) * 6f;
             if (Math.abs(deg) > 110f) continue;
@@ -265,52 +290,53 @@ public class LockView extends View {
                 centerBaseline(numPaint, cy - R1 * (float) Math.sin(a)), numPaint);
         }
 
-        // minute pill
         rect.set(pillX - pillW / 2f, cy - pillH / 2f, pillX + pillW / 2f, cy + pillH / 2f);
         canvas.drawRoundRect(rect, pillH / 2f, pillH / 2f, pillPaint);
         canvas.drawText(two(min), pillX, centerBaseline(pillText, cy), pillText);
 
-        // ghanta (left ma fixed)
         canvas.drawText(two(hour), cx, centerBaseline(hourPaint, cy), hourPaint);
 
-        // date + day
-        float dateX = cx + R3 + w * 0.014f + w * 0.04f;
-        dateX = Math.min(dateX, w - tw - dp(14));
-        canvas.drawText(dateStr, dateX, cy + dp(6), datePaint);
-        canvas.drawText(dayStr, dateX, cy + dp(20), datePaint);
-
-        // battery
-        if (nowMs - lastBattMs > 20000 || battPct < 0) {
-            lastBattMs = nowMs;
-            Intent b = getContext().registerReceiver(null, new IntentFilter(Intent.ACTION_BATTERY_CHANGED));
-            if (b != null) {
-                int level = b.getIntExtra(BatteryManager.EXTRA_LEVEL, -1);
-                int scale = b.getIntExtra(BatteryManager.EXTRA_SCALE, 100);
-                if (level >= 0 && scale > 0) battPct = Math.round(level * 100f / scale);
-            }
+        if (showDate) {
+            float dateX = cx + ringRight + w * 0.04f * sc;
+            dateX = Math.min(dateX, w - tw - dp(14));
+            canvas.drawText(dateStr, dateX, cy + dp(6), datePaint);
+            canvas.drawText(dayStr, dateX, cy + dp(20), datePaint);
         }
-        if (battPct >= 0) {
-            int pct = battPct;
-            String t = pct + "%";
-            float bw = dp(8);
-            float bh = dp(14);
-            float total = bw + dp(8) + battText.measureText(t);
-            float bx = (w - total) / 2f;
-            float by = h * 0.86f;
-            rect.set(bx, by - bh / 2f, bx + bw, by + bh / 2f);
-            canvas.drawRoundRect(rect, dp(2), dp(2), battStroke);
-            rect.set(bx + bw * 0.3f, by - bh / 2f - dp(1.5f), bx + bw * 0.7f, by - bh / 2f);
-            canvas.drawRect(rect, battFill);
-            float inner = bh - dp(3);
-            float bottom = by + bh / 2f - dp(1.5f);
-            rect.set(bx + dp(1.5f), bottom - inner * pct / 100f, bx + bw - dp(1.5f), bottom);
-            canvas.drawRect(rect, battFill);
-            canvas.drawText(t, bx + bw + dp(8), centerBaseline(battText, by), battText);
+
+        if (showBatt) {
+            if (nowMs - lastBattMs > 20000 || battPct < 0) {
+                lastBattMs = nowMs;
+                Intent b = getContext().registerReceiver(null, new IntentFilter(Intent.ACTION_BATTERY_CHANGED));
+                if (b != null) {
+                    int level = b.getIntExtra(BatteryManager.EXTRA_LEVEL, -1);
+                    int scale = b.getIntExtra(BatteryManager.EXTRA_SCALE, 100);
+                    if (level >= 0 && scale > 0) battPct = Math.round(level * 100f / scale);
+                }
+            }
+            if (battPct >= 0) {
+                int pct = battPct;
+                String t = pct + "%";
+                float bw = dp(8);
+                float bh = dp(14);
+                float total = bw + dp(8) + battText.measureText(t);
+                float bx = (w - total) / 2f;
+                float by = h * byF;
+                rect.set(bx, by - bh / 2f, bx + bw, by + bh / 2f);
+                canvas.drawRoundRect(rect, dp(2), dp(2), battStroke);
+                rect.set(bx + bw * 0.3f, by - bh / 2f - dp(1.5f), bx + bw * 0.7f, by - bh / 2f);
+                canvas.drawRect(rect, battFill);
+                float inner = bh - dp(3);
+                float bottom = by + bh / 2f - dp(1.5f);
+                rect.set(bx + dp(1.5f), bottom - inner * pct / 100f, bx + bw - dp(1.5f), bottom);
+                canvas.drawRect(rect, battFill);
+                canvas.drawText(t, bx + bw + dp(8), centerBaseline(battText, by), battText);
+            }
         }
     }
 
     @Override
     public boolean onTouchEvent(MotionEvent e) {
+        if (preview) return false;
         detector.onTouchEvent(e);
         if (unlocking) return true;
         switch (e.getActionMasked()) {

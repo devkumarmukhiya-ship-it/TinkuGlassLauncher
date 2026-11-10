@@ -102,6 +102,7 @@ public class DrawerAdapter extends BaseAdapter {
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
             }
             tv.setText(row.header);
+            tv.setTextColor((AppAdapter.tone(context) & 0x00FFFFFF) | 0x99000000);
             return tv;
         }
 
@@ -120,6 +121,7 @@ public class DrawerAdapter extends BaseAdapter {
         name.setSingleLine(false);
         name.setMaxLines(2);
         name.setText(AppAdapter.labelOf(context, row.app));
+        name.setTextColor(AppAdapter.tone(context));
         icon.setImageDrawable(AppAdapter.iconOf(context, row.app));
         return convertView;
     }

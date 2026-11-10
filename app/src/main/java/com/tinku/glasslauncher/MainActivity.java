@@ -248,6 +248,7 @@ public class MainActivity extends Activity {
         setupV7();
         setupV8();
         setupV12();
+        setupV13();
         setupGestures();
         setupAlphabetTouch();
         buildAlphabetBar();
@@ -259,6 +260,7 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onResume() {
+        checkLockDue();
         super.onResume();
         refreshWeather(false);
         refreshInfo();
@@ -366,6 +368,7 @@ public class MainActivity extends Activity {
 
         // lock screen (sabai bhanda mathi)
         lockView = new LockView(this);
+        lockView.setPrefs(prefs);
         lockView.setVisibility(prefs.getBoolean("lockscreen", true) ? View.VISIBLE : View.GONE);
         rootFrame.addView(lockView, new FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
@@ -374,6 +377,7 @@ public class MainActivity extends Activity {
             @Override
             public void onReceive(Context context, Intent intent) {
                 if (!prefs.getBoolean("lockscreen", true)) return;
+                if (lockDelayHandling()) return;
                 hideOverlay();
                 if (searchOverlay.getVisibility() == View.VISIBLE) hideSearch();
                 if (dayOpen) toggleDay();
@@ -568,6 +572,7 @@ public class MainActivity extends Activity {
     }
 
     private void applyV8Align() {
+        applyV13Align();
         if (plusTop == null) return;
         int g = isLeft() ? Gravity.LEFT : Gravity.RIGHT;
         plusTop.setGravity(g);
@@ -761,10 +766,11 @@ public class MainActivity extends Activity {
         String day = new java.text.SimpleDateFormat("EEEE", java.util.Locale.ENGLISH)
             .format(now).toUpperCase(java.util.Locale.ENGLISH);
         String date = new java.text.SimpleDateFormat("dd/MM/yyyy", java.util.Locale.ENGLISH).format(now);
-        boolean showTop = prefs.getBoolean("showtop", false);
+        boolean showTop = prefs.getBoolean("showtop", false) || prefs.getBoolean("events", false);
         boolean showBottom = prefs.getBoolean("showbottom", false)
             || prefs.getBoolean("weather", false) || prefs.getBoolean("showbat", false);
-        infoTop.setText(day + "\n" + date);
+        String ev = nextEventText();
+        infoTop.setText(day + "\n" + date + (ev.length() > 0 ? "\n" + ev : ""));
         String extra = extraInfo();
         infoBottom.setText(extra.length() > 0 ? extra : "WEATHER...");
         infoTop.setVisibility(showTop ? View.VISIBLE : View.GONE);
@@ -778,8 +784,9 @@ public class MainActivity extends Activity {
         boolean on;
         SharedPreferences.Editor ed = prefs.edit();
         if (top) {
-            on = !prefs.getBoolean("showtop", false);
+            on = !(prefs.getBoolean("showtop", false) || prefs.getBoolean("events", false));
             ed.putBoolean("showtop", on);
+            if (!on) ed.putBoolean("events", false);
         } else {
             on = !(prefs.getBoolean("showbottom", false)
                 || prefs.getBoolean("weather", false) || prefs.getBoolean("showbat", false));
@@ -826,6 +833,7 @@ public class MainActivity extends Activity {
             plusBottom.setShadowLayer(sr * 0.75f, 0f, 1f, sc);
         }
         if (dayView != null) dayView.setColor(main);
+        if (clockText != null) clockText.setTone(main, !dark);
         refreshFavorites();
     }
 
@@ -864,6 +872,543 @@ public class MainActivity extends Activity {
         });
         applyTextTone();
         refreshInfoV12();
+    }
+
+    // ===== Step 13: Tinku widget sheet, clock styles, lock screen setup =====
+    private ClockText clockText;
+    private final android.os.Handler lockHandler = new android.os.Handler(android.os.Looper.getMainLooper());
+    private long lockOffAt = 0L;
+    private final Runnable idleLockRun = new Runnable() {
+        @Override
+        public void run() {
+            if (lockView == null || !prefs.getBoolean("lockscreen", true)) return;
+            if (lockView.getVisibility() == View.VISIBLE) return;
+            if (isDrawerOpen()) return;
+            hideOverlay();
+            lockView.showLock();
+        }
+    };
+
+    private void setupV13() {
+        if (!prefs.getBoolean("v13", false)) {
+            prefs.edit().putBoolean("v13", true)
+                .putBoolean("lock_date", true).putBoolean("lock_batt", true).putBoolean("lock_sec", true)
+                .putString("lock_delay", "0").putString("lock_idle", "0")
+                .apply();
+        }
+        clockText = new ClockText(this);
+        int idx = clockBox.indexOfChild(textClock);
+        if (idx < 0) idx = 2;
+        clockBox.addView(clockText, idx, new LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        textClock.setVisibility(View.GONE);
+        clockText.setStyleIndex(prefs.getInt("clockstyle", 36));
+        clockText.setOnClickListener(v -> toggleDay());
+        clockText.setOnLongClickListener(v -> clockBox.performLongClick());
+        applyV13Align();
+        applyTextTone();
+    }
+
+    private void applyV13Align() {
+        if (clockText != null) clockText.setAlignRight(!isLeft());
+    }
+
+    private void applyClockStyleV13() {
+        if (clockText == null) return;
+        clockText.setStyleIndex(prefs.getInt("clockstyle", 36));
+        clockBox.requestLayout();
+    }
+
+    // ---------- lock screen timer ----------
+    private long lockSecs(String key) {
+        try {
+            return Long.parseLong(prefs.getString(key, "0"));
+        } catch (Exception e) {
+            return 0L;
+        }
+    }
+
+    /** true = abhi lock nagarne (timer pachi herne) */
+    private boolean lockDelayHandling() {
+        if (lockSecs("lock_delay") == 0L) return false;
+        lockOffAt = System.currentTimeMillis();
+        return true;
+    }
+
+    private void checkLockDue() {
+        if (lockOffAt > 0L && lockView != null && prefs.getBoolean("lockscreen", true)) {
+            long sec = lockSecs("lock_delay");
+            if (sec >= 0L && System.currentTimeMillis() - lockOffAt >= sec * 1000L) {
+                hideOverlay();
+                lockView.showLock();
+            }
+        }
+        lockOffAt = 0L;
+        scheduleIdleLock();
+    }
+
+    private void scheduleIdleLock() {
+        lockHandler.removeCallbacks(idleLockRun);
+        if (lockView == null || !prefs.getBoolean("lockscreen", true)) return;
+        long sec = lockSecs("lock_idle");
+        if (sec > 0L) lockHandler.postDelayed(idleLockRun, sec * 1000L);
+    }
+
+    @Override
+    public void onUserInteraction() {
+        super.onUserInteraction();
+        scheduleIdleLock();
+    }
+
+    // ---------- calendar ----------
+    private void ensureCalendarPermission() {
+        if (!prefs.getBoolean("events", false)) return;
+        if (android.os.Build.VERSION.SDK_INT >= 23
+            && checkSelfPermission("android.permission.READ_CALENDAR")
+            != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[] { "android.permission.READ_CALENDAR" }, 1301);
+        }
+    }
+
+    private String nextEventText() {
+        if (!prefs.getBoolean("events", false)) return "";
+        if (android.os.Build.VERSION.SDK_INT >= 23
+            && checkSelfPermission("android.permission.READ_CALENDAR")
+            != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            return "";
+        }
+        android.database.Cursor c = null;
+        try {
+            long now = System.currentTimeMillis();
+            android.net.Uri.Builder ub = android.provider.CalendarContract.Instances.CONTENT_URI.buildUpon();
+            android.content.ContentUris.appendId(ub, now);
+            android.content.ContentUris.appendId(ub, now + 2L * 24L * 3600L * 1000L);
+            c = getContentResolver().query(ub.build(),
+                new String[] {
+                    android.provider.CalendarContract.Instances.TITLE,
+                    android.provider.CalendarContract.Instances.BEGIN,
+                    android.provider.CalendarContract.Instances.ALL_DAY },
+                null, null, android.provider.CalendarContract.Instances.BEGIN + " ASC");
+            while (c != null && c.moveToNext()) {
+                String title = c.getString(0);
+                long begin = c.getLong(1);
+                boolean allDay = c.getInt(2) == 1;
+                if (title == null || title.length() == 0) continue;
+                if (!allDay && begin < now - 30L * 60L * 1000L) continue;
+                String when = allDay ? "TODAY"
+                    : new java.text.SimpleDateFormat("EEE h:mm a", java.util.Locale.ENGLISH)
+                        .format(new java.util.Date(begin)).toUpperCase(java.util.Locale.ENGLISH);
+                return when + " \u00b7 " + title.toUpperCase(java.util.Locale.getDefault());
+            }
+        } catch (Exception e) {
+            // calendar padhna sakiena
+        } finally {
+            if (c != null) c.close();
+        }
+        return "";
+    }
+
+    // ---------- common sheet helpers ----------
+    private LinearLayout sheetBox(String title) {
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(dp(24), dp(20), dp(24), dp(28));
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(0xFFF1F1F1);
+        float r = dp(28);
+        bg.setCornerRadii(new float[] { r, r, r, r, 0, 0, 0, 0 });
+        box.setBackground(bg);
+        TextView ht = new TextView(this);
+        ht.setText(title);
+        ht.setTextColor(0xFF111111);
+        ht.setTextSize(24);
+        ht.setPadding(0, 0, 0, dp(8));
+        box.addView(ht);
+        return box;
+    }
+
+    private void showBottom(Dialog d, View content) {
+        d.setContentView(content);
+        Window w = d.getWindow();
+        w.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+        w.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        w.setGravity(Gravity.BOTTOM);
+        d.show();
+    }
+
+    private void addTapRow(LinearLayout box, String label, String sub, final Runnable r) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.VERTICAL);
+        row.setPadding(0, dp(12), 0, dp(12));
+        TextView t = new TextView(this);
+        t.setText(label + "  \u203A");
+        t.setTextColor(0xFF111111);
+        t.setTextSize(17);
+        row.addView(t);
+        if (sub != null) {
+            TextView s = new TextView(this);
+            s.setText(sub);
+            s.setTextColor(0xFF666666);
+            s.setTextSize(13);
+            row.addView(s);
+        }
+        row.setOnClickListener(v -> r.run());
+        box.addView(row, new LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+    }
+
+    private void addSeekRow(LinearLayout box, String label, final String key,
+                            final float min, final float max, final float def, final Runnable onChange) {
+        TextView t = new TextView(this);
+        t.setText(label);
+        t.setTextColor(0xFF111111);
+        t.setTextSize(16);
+        t.setPadding(0, dp(12), 0, 0);
+        box.addView(t);
+        android.widget.SeekBar sb = new android.widget.SeekBar(this);
+        sb.setMax(1000);
+        float cur = prefs.getFloat(key, def);
+        sb.setProgress(Math.round((cur - min) / (max - min) * 1000f));
+        sb.setOnSeekBarChangeListener(new android.widget.SeekBar.OnSeekBarChangeListener() {
+            @Override
+            public void onProgressChanged(android.widget.SeekBar s, int p, boolean fromUser) {
+                if (!fromUser) return;
+                prefs.edit().putFloat(key, min + (max - min) * p / 1000f).apply();
+                if (onChange != null) onChange.run();
+            }
+
+            @Override
+            public void onStartTrackingTouch(android.widget.SeekBar s) {
+            }
+
+            @Override
+            public void onStopTrackingTouch(android.widget.SeekBar s) {
+            }
+        });
+        box.addView(sb, new LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+    }
+
+    // ---------- Tinku widget sheet (home ma long press) ----------
+    private View widgetRow(String glyph, String title, String sub, boolean enabled,
+                           final String key, final Runnable tap, final Runnable change) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(dp(18), dp(15), dp(16), dp(15));
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(0xFFF5F5F5);
+        bg.setCornerRadius(dp(22));
+        row.setBackground(bg);
+        row.setAlpha(enabled ? 1f : 0.5f);
+
+        TextView g = new TextView(this);
+        g.setText(glyph);
+        g.setTextSize(22);
+        g.setTextColor(0xFF333333);
+        g.setGravity(Gravity.CENTER);
+        row.addView(g, new LinearLayout.LayoutParams(dp(40), ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        LinearLayout col = new LinearLayout(this);
+        col.setOrientation(LinearLayout.VERTICAL);
+        col.setPadding(dp(12), 0, dp(8), 0);
+        TextView t = new TextView(this);
+        t.setText(title);
+        t.setTextColor(0xFF222222);
+        t.setTextSize(18);
+        col.addView(t);
+        if (sub != null) {
+            TextView s = new TextView(this);
+            s.setText(sub);
+            s.setTextColor(0xFF666666);
+            s.setTextSize(14);
+            col.addView(s);
+        }
+        row.addView(col, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+
+        if (key != null) {
+            final android.widget.Switch sw = new android.widget.Switch(this);
+            sw.setChecked(prefs.getBoolean(key, false));
+            sw.setOnCheckedChangeListener(new android.widget.CompoundButton.OnCheckedChangeListener() {
+                @Override
+                public void onCheckedChanged(android.widget.CompoundButton b, boolean on) {
+                    prefs.edit().putBoolean(key, on).apply();
+                    if (change != null) change.run();
+                }
+            });
+            row.addView(sw);
+            if (tap == null) {
+                row.setOnClickListener(v -> sw.toggle());
+            } else {
+                row.setOnClickListener(v -> tap.run());
+            }
+        } else {
+            TextView ch = new TextView(this);
+            ch.setText("\u203A");
+            ch.setTextSize(26);
+            ch.setTextColor(0xFF555555);
+            row.addView(ch);
+            row.setOnClickListener(v -> {
+                if (tap != null) tap.run();
+            });
+        }
+        return row;
+    }
+
+    private LinearLayout.LayoutParams rowLp() {
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.bottomMargin = dp(4);
+        return lp;
+    }
+
+    private void showWidgetSheet() {
+        final Dialog d = new Dialog(this);
+        d.requestWindowFeature(Window.FEATURE_NO_TITLE);
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(dp(16), dp(24), dp(16), dp(24));
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(0xFFEBEBEB);
+        float r = dp(30);
+        bg.setCornerRadii(new float[] { r, r, r, r, 0, 0, 0, 0 });
+        box.setBackground(bg);
+
+        TextView title = new TextView(this);
+        title.setText("Tinku widget");
+        title.setTextColor(0xFF333333);
+        title.setTextSize(28);
+        title.setPadding(dp(8), 0, 0, dp(14));
+        box.addView(title);
+
+        box.addView(widgetRow("\u25F7", "Clock style", null, true, null,
+            () -> { d.dismiss(); showClockStyles(); }, null), rowLp());
+        box.addView(widgetRow("\u25A6", "Calendar", "Show upcoming events, Show date", true, null,
+            () -> { d.dismiss(); showCalendarDialog(); }, null), rowLp());
+        box.addView(widgetRow("\u2600\uFE0E", "Weather", "Location, Temperature units", true, "weather",
+            () -> { d.dismiss(); showWeatherDialog(); },
+            () -> {
+                if (prefs.getBoolean("weather", false)) refreshWeather(true);
+                refreshInfoV12();
+            }), rowLp());
+        box.addView(widgetRow("\u229E", "Add Custom Widget", "Next step ma aaucha", false, null,
+            () -> Toast.makeText(this, "Add Custom Widget: next step ma", Toast.LENGTH_SHORT).show(), null), rowLp());
+        box.addView(widgetRow("\u2195", "Move Widget", null, true, null,
+            () -> { d.dismiss(); startDrag(clockBox, "cx", "cy"); }, null), rowLp());
+        box.addView(widgetRow("\u25B7", "Show Media Widget", "While playing music (next step)", false, null,
+            () -> Toast.makeText(this, "Media Widget: next step ma", Toast.LENGTH_SHORT).show(), null), rowLp());
+        box.addView(widgetRow("\u25AE", "Show Battery Percentage", null, true, "showbat",
+            null, () -> refreshInfoV12()), rowLp());
+
+        View gap = new View(this);
+        box.addView(gap, new LinearLayout.LayoutParams(1, dp(12)));
+
+        box.addView(widgetRow("\u2606", "Edit favourites", null, true, null,
+            () -> { d.dismiss(); showFavMenu(); }, null), rowLp());
+        box.addView(widgetRow("\u25A3", "Lock screen", "Timer, position, date, battery", true, null,
+            () -> { d.dismiss(); showLockSettings(); }, null), rowLp());
+        box.addView(widgetRow("\u2699\uFE0E", "Tinku settings", null, true, null,
+            () -> { d.dismiss(); showSettings(); }, null), rowLp());
+
+        android.widget.ScrollView sv = new android.widget.ScrollView(this);
+        sv.addView(box);
+        d.setContentView(sv);
+        Window w = d.getWindow();
+        w.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+        w.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        w.setGravity(Gravity.BOTTOM);
+        d.show();
+    }
+
+    private void showFavMenu() {
+        showSheet(null, "Favourites",
+            new String[] {
+                "Favourites: icon on left",
+                "Favourites: icon on right",
+                "Reset favourites positions",
+                "Hidden apps"
+            },
+            new int[] { 0, 0, android.R.drawable.ic_menu_revert, android.R.drawable.ic_menu_view },
+            new Runnable[] {
+                () -> { prefs.edit().putString("favalign", "left").apply(); refreshFavorites(); },
+                () -> { prefs.edit().putString("favalign", "right").apply(); refreshFavorites(); },
+                () -> {
+                    SharedPreferences.Editor ed = prefs.edit();
+                    for (String k : prefs.getAll().keySet()) {
+                        if (k.startsWith("fpx:") || k.startsWith("fpy:")) ed.remove(k);
+                    }
+                    ed.remove("fx").remove("fy");
+                    ed.apply();
+                    refreshFavorites();
+                    applyFavPos();
+                },
+                () -> showHiddenApps()
+            });
+    }
+
+    private void showCalendarDialog() {
+        final Dialog d = new Dialog(this);
+        d.requestWindowFeature(Window.FEATURE_NO_TITLE);
+        LinearLayout box = sheetBox("Calendar");
+        addSwitchRow(box, "Show date and day", "showtop", () -> refreshInfoV12());
+        addSwitchRow(box, "Show upcoming events", "events", () -> {
+            ensureCalendarPermission();
+            refreshInfoV12();
+        });
+        showBottom(d, box);
+    }
+
+    private void showWeatherDialog() {
+        final Dialog d = new Dialog(this);
+        d.requestWindowFeature(Window.FEATURE_NO_TITLE);
+        LinearLayout box = sheetBox("Weather");
+        addSwitchRow(box, "Show weather", "weather", () -> {
+            if (prefs.getBoolean("weather", false)) refreshWeather(true);
+            refreshInfoV12();
+        });
+        addChoiceRow(box, "Temperature units", "wunit", "c",
+            new String[] { "c", "f" },
+            new String[] { "\u00b0C", "\u00b0F" },
+            () -> {
+                prefs.edit().remove("wtext").remove("wtime").apply();
+                refreshWeather(true);
+                refreshInfoV12();
+            });
+        TextView city = makeButton("Change location", 0xFFFFFFFF, 0xFF00695C);
+        city.setOnClickListener(v -> { d.dismiss(); showCityDialog(); });
+        LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        clp.topMargin = dp(14);
+        box.addView(city, clp);
+        showBottom(d, box);
+    }
+
+    // ---------- Clock style gallery ----------
+    private View styleTile(final int idx, boolean selected, final Dialog d) {
+        LinearLayout tile = new LinearLayout(this);
+        tile.setOrientation(LinearLayout.VERTICAL);
+        tile.setGravity(Gravity.BOTTOM);
+        tile.setPadding(dp(14), dp(10), dp(14), dp(12));
+        GradientDrawable g = new GradientDrawable(GradientDrawable.Orientation.TL_BR,
+            new int[] { 0xFF8E8E8E, 0xFF5C5C5C });
+        g.setCornerRadius(dp(24));
+        if (selected) g.setStroke(dp(3), 0xFF1565C0);
+        tile.setBackground(g);
+
+        ClockText ct = new ClockText(this);
+        ct.setSample(true);
+        ct.setStyleIndex(idx);
+        ct.setTone(0xFFFFFFFF, false);
+        tile.addView(ct, new LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        if (!ClockText.isDay(idx)) {
+            TextView dt = new TextView(this);
+            dt.setText("Thu, 30 Aug  100%");
+            dt.setTextColor(0xFFFFFFFF);
+            dt.setTextSize(12);
+            tile.addView(dt);
+        }
+        tile.setOnClickListener(v -> {
+            prefs.edit().putInt("clockstyle", idx).apply();
+            applyClockStyleV13();
+            d.dismiss();
+        });
+        return tile;
+    }
+
+    private void showClockStyles() {
+        final Dialog d = new Dialog(this, android.R.style.Theme_DeviceDefault_Light_NoActionBar);
+        android.widget.ScrollView sv = new android.widget.ScrollView(this);
+        sv.setBackgroundColor(0xFFEBEBEB);
+        LinearLayout col = new LinearLayout(this);
+        col.setOrientation(LinearLayout.VERTICAL);
+        col.setPadding(dp(8), dp(8), dp(8), dp(24));
+        TextView title = new TextView(this);
+        title.setText("Clock style");
+        title.setTextSize(30);
+        title.setTextColor(0xFF777777);
+        title.setGravity(Gravity.CENTER);
+        title.setPadding(0, dp(56), 0, dp(24));
+        col.addView(title);
+        int cur = prefs.getInt("clockstyle", 36);
+        for (int i = 0; i < ClockText.COUNT; i += 2) {
+            LinearLayout row = new LinearLayout(this);
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            for (int k = 0; k < 2; k++) {
+                int idx = i + k;
+                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(150), 1f);
+                lp.setMargins(dp(5), dp(5), dp(5), dp(5));
+                row.addView(styleTile(idx, idx == cur, d), lp);
+            }
+            col.addView(row, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        }
+        sv.addView(col);
+        d.setContentView(sv);
+        d.show();
+        d.getWindow().setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
+    }
+
+    // ---------- Lock screen setup ----------
+    private void showLockSettings() {
+        lockHandler.removeCallbacks(idleLockRun);
+        final Dialog d = new Dialog(this, android.R.style.Theme_DeviceDefault_NoActionBar);
+        d.setOnDismissListener(x -> scheduleIdleLock());
+
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setBackgroundColor(Color.BLACK);
+
+        LockView pv = new LockView(this);
+        pv.setPrefs(prefs);
+        pv.setPreview(true);
+        root.addView(pv, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+
+        LinearLayout box = sheetBox("Lock screen setup");
+        addSwitchRow(box, "Lock screen on", "lockscreen", () -> {});
+        addChoiceRow(box, "Show lock screen after screen off", "lock_delay", "0",
+            new String[] { "0", "15", "30", "60", "300", "1800", "-1" },
+            new String[] { "Immediately", "After 15 seconds", "After 30 seconds", "After 1 minute",
+                "After 5 minutes", "After 30 minutes", "Never (only at launch)" },
+            () -> {});
+        addChoiceRow(box, "Lock after idle on home", "lock_idle", "0",
+            new String[] { "0", "30", "60", "120", "300" },
+            new String[] { "Off", "30 seconds", "1 minute", "2 minutes", "5 minutes" },
+            () -> scheduleIdleLock());
+        addSeekRow(box, "Clock: up / down", "lock_cy", 0.20f, 0.70f, 0.44f, null);
+        addSeekRow(box, "Clock: left / right", "lock_dx", -0.25f, 0.25f, 0f, null);
+        addSeekRow(box, "Clock size", "lock_scale", 0.70f, 1.30f, 1f, null);
+        addSeekRow(box, "Battery: up / down", "lock_by", 0.70f, 0.95f, 0.86f, null);
+        addSwitchRow(box, "Show date and day", "lock_date", () -> {});
+        addSwitchRow(box, "Show seconds wheel", "lock_sec", () -> {});
+        addSwitchRow(box, "Show battery", "lock_batt", () -> {});
+
+        TextView reset = makeButton("Reset position and size", 0xFF00695C, 0xFFD7E8E5);
+        reset.setOnClickListener(v -> {
+            prefs.edit().remove("lock_cy").remove("lock_dx").remove("lock_scale").remove("lock_by").apply();
+            d.dismiss();
+            showLockSettings();
+        });
+        LinearLayout.LayoutParams rlp = new LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        rlp.topMargin = dp(16);
+        box.addView(reset, rlp);
+
+        TextView done = makeButton("Done", 0xFFFFFFFF, 0xFF00695C);
+        done.setOnClickListener(v -> d.dismiss());
+        LinearLayout.LayoutParams dlp = new LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        dlp.topMargin = dp(8);
+        box.addView(done, dlp);
+
+        android.widget.ScrollView sv = new android.widget.ScrollView(this);
+        sv.addView(box);
+        int sh = (int) (getResources().getDisplayMetrics().heightPixels * 0.5f);
+        root.addView(sv, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, sh));
+
+        d.setContentView(root);
+        d.show();
+        d.getWindow().setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
     }
 
     private int dp(int v) {
@@ -1197,7 +1742,7 @@ public class MainActivity extends Activity {
 
         addSwitchRow(box, "Monochrome icons", "mono", () -> refreshAll());
         addSwitchRow(box, "Stacked clock (hour over minute)", "stacked", () -> applyClockStyle());
-        addSwitchRow(box, "Lock screen (clock dial)", "lockscreen", () -> {});
+        addTapRow(box, "Lock screen setup", "Timer, position, date, battery", () -> showLockSettings());
         addSwitchRow(box, "Dark text on home (light wallpaper)", "darktext", () -> applyTextTone());
         addChoiceRow(box, "Favourites layout", "favlayout", "free",
             new String[] { "free", "vertical", "horizontal" },
@@ -1263,6 +1808,8 @@ public class MainActivity extends Activity {
     }
 
     private void showHomeMenu() {
+        showWidgetSheet();
+        if (true) return;
         showSheet(null, "Home screen",
             new String[] {
                 "Settings",
@@ -1841,6 +2388,7 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onPause() {
+        lockHandler.removeCallbacks(idleLockRun);
         super.onPause();
         hideOverlay();
     }

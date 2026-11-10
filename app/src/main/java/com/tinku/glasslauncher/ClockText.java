@@ -1,0 +1,325 @@
+package com.tinku.glasslauncher;
+
+import android.content.BroadcastReceiver;
+import android.content.Context;
+import android.content.Intent;
+import android.content.IntentFilter;
+import android.graphics.Canvas;
+import android.graphics.Color;
+import android.graphics.Paint;
+import android.graphics.Typeface;
+import android.os.BatteryManager;
+import android.text.format.DateFormat;
+import android.util.TypedValue;
+import android.view.View;
+import java.text.SimpleDateFormat;
+import java.util.Calendar;
+import java.util.Date;
+import java.util.Locale;
+
+/** Home clock with many styles (font + layout). Style index 0..COUNT-1 (even = normal, odd = first part dim). */
+public class ClockText extends View {
+    private static final int L_INLINE = 0;      // 5:00
+    private static final int L_INLINE_PAD = 1;  // 05:00
+    private static final int L_SPLIT = 2;       // 05 big + 00 small
+    private static final int L_STACK = 3;       // 05 over 00
+    private static final int L_DAY = 4;         // Thu. big + small line
+    private static final int L_NONE = 5;        // no clock
+    private static final int FILL = 0;
+    private static final int STROKE = 1;
+
+    private static final class S {
+        final int layout;
+        final String font;
+        final int face;
+        final float size;
+        final int mode;
+        final float spacing;
+
+        S(int layout, String font, int face, float size, int mode, float spacing) {
+            this.layout = layout;
+            this.font = font;
+            this.face = face;
+            this.size = size;
+            this.mode = mode;
+            this.spacing = spacing;
+        }
+    }
+
+    private static final S[] BASE = new S[] {
+        new S(L_INLINE, "sans-serif-medium", Typeface.NORMAL, 44, FILL, 0f),
+        new S(L_NONE, "sans-serif", Typeface.NORMAL, 44, FILL, 0f),
+        new S(L_INLINE, "sans-serif-light", Typeface.NORMAL, 46, FILL, 0f),
+        new S(L_INLINE, "sans-serif-thin", Typeface.NORMAL, 50, FILL, 0f),
+        new S(L_INLINE, "sans-serif", Typeface.NORMAL, 44, FILL, 0f),
+        new S(L_INLINE, "casual", Typeface.NORMAL, 46, FILL, 0f),
+        new S(L_INLINE, "sans-serif-medium", Typeface.BOLD_ITALIC, 44, FILL, 0f),
+        new S(L_INLINE, "cursive", Typeface.NORMAL, 50, FILL, 0f),
+        new S(L_INLINE, "sans-serif-light", Typeface.ITALIC, 46, FILL, 0f),
+        new S(L_INLINE, "sans-serif-condensed", Typeface.BOLD, 50, FILL, 0f),
+        new S(L_INLINE, "monospace", Typeface.BOLD, 40, FILL, 0.05f),
+        new S(L_INLINE, "sans-serif-black", Typeface.NORMAL, 46, STROKE, 0f),
+        new S(L_SPLIT, "sans-serif-black", Typeface.NORMAL, 56, FILL, 0f),
+        new S(L_SPLIT, "sans-serif-medium", Typeface.NORMAL, 56, FILL, 0f),
+        new S(L_SPLIT, "serif", Typeface.BOLD, 56, FILL, 0f),
+        new S(L_INLINE_PAD, "cursive", Typeface.NORMAL, 50, FILL, 0f),
+        new S(L_INLINE_PAD, "sans-serif-condensed", Typeface.NORMAL, 54, FILL, 0f),
+        new S(L_STACK, "sans-serif-light", Typeface.NORMAL, 54, FILL, 0f),
+        new S(L_STACK, "sans-serif-condensed", Typeface.BOLD, 54, FILL, 0f),
+        new S(L_STACK, "sans-serif-black", Typeface.NORMAL, 52, FILL, 0f),
+        new S(L_STACK, "sans-serif-thin", Typeface.NORMAL, 56, FILL, 0f),
+        new S(L_STACK, "sans-serif-medium", Typeface.NORMAL, 54, STROKE, 0f),
+        new S(L_DAY, "cursive", Typeface.NORMAL, 60, FILL, 0f),
+        new S(L_DAY, "sans-serif-black", Typeface.NORMAL, 54, FILL, 0f),
+        new S(L_INLINE_PAD, "serif", Typeface.NORMAL, 48, FILL, 0f),
+        new S(L_SPLIT, "sans-serif-light", Typeface.NORMAL, 58, STROKE, 0f),
+        new S(L_DAY, "sans-serif-condensed", Typeface.BOLD, 60, FILL, 0f)
+    };
+
+    public static final int COUNT = BASE.length * 2;
+
+    public static boolean isDay(int idx) {
+        return BASE[Math.max(0, Math.min(COUNT - 1, idx)) / 2].layout == L_DAY;
+    }
+
+    private final Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint pSmall = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private int style = 36;
+    private boolean sample = false;
+    private boolean right = false;
+    private boolean shadow = true;
+    private int color = Color.WHITE;
+
+    private String hStr = "";
+    private String mStr = "";
+    private String dayStr = "";
+    private String smallStr = "";
+    private float contentW = 0f;
+    private float contentH = 0f;
+
+    private final BroadcastReceiver tick = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context c, Intent i) {
+            requestLayout();
+            invalidate();
+        }
+    };
+
+    public ClockText(Context c) {
+        super(c);
+    }
+
+    public void setStyleIndex(int idx) {
+        style = Math.max(0, Math.min(COUNT - 1, idx));
+        requestLayout();
+        invalidate();
+    }
+
+    public void setSample(boolean s) {
+        sample = s;
+        requestLayout();
+        invalidate();
+    }
+
+    public void setAlignRight(boolean r) {
+        right = r;
+        invalidate();
+    }
+
+    public void setTone(int c, boolean withShadow) {
+        color = c;
+        shadow = withShadow;
+        invalidate();
+    }
+
+    @Override
+    protected void onAttachedToWindow() {
+        super.onAttachedToWindow();
+        if (!sample) {
+            IntentFilter f = new IntentFilter();
+            f.addAction(Intent.ACTION_TIME_TICK);
+            f.addAction(Intent.ACTION_TIME_CHANGED);
+            f.addAction(Intent.ACTION_TIMEZONE_CHANGED);
+            getContext().registerReceiver(tick, f);
+        }
+    }
+
+    @Override
+    protected void onDetachedFromWindow() {
+        if (!sample) {
+            try {
+                getContext().unregisterReceiver(tick);
+            } catch (Exception e) {
+                // not registered
+            }
+        }
+        super.onDetachedFromWindow();
+    }
+
+    private float sp(float v) {
+        return TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, v, getResources().getDisplayMetrics());
+    }
+
+    private float dp(float v) {
+        return TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, v, getResources().getDisplayMetrics());
+    }
+
+    private static String two(int v) {
+        return v < 10 ? "0" + v : String.valueOf(v);
+    }
+
+    private int battery() {
+        Intent b = getContext().registerReceiver(null, new IntentFilter(Intent.ACTION_BATTERY_CHANGED));
+        if (b == null) return 100;
+        int level = b.getIntExtra(BatteryManager.EXTRA_LEVEL, -1);
+        int scale = b.getIntExtra(BatteryManager.EXTRA_SCALE, 100);
+        if (level < 0 || scale <= 0) return 100;
+        return Math.round(level * 100f / scale);
+    }
+
+    private void prepare() {
+        S s = BASE[style / 2];
+        int h;
+        int m;
+        if (sample) {
+            h = 5;
+            m = 0;
+            dayStr = "Thu.";
+            smallStr = "5:00 \u00b7 30 Aug \u00b7 100%";
+        } else {
+            Calendar cal = Calendar.getInstance();
+            boolean is24 = DateFormat.is24HourFormat(getContext());
+            h = cal.get(is24 ? Calendar.HOUR_OF_DAY : Calendar.HOUR);
+            if (!is24 && h == 0) h = 12;
+            m = cal.get(Calendar.MINUTE);
+            Date now = cal.getTime();
+            dayStr = new SimpleDateFormat("EEE", Locale.ENGLISH).format(now) + ".";
+            smallStr = h + ":" + two(m) + " \u00b7 "
+                + new SimpleDateFormat("d MMM", Locale.ENGLISH).format(now) + " \u00b7 " + battery() + "%";
+        }
+        boolean pad = s.layout != L_INLINE;
+        hStr = pad ? two(h) : String.valueOf(h);
+        mStr = two(m);
+
+        float f = sample ? 0.85f : 1f;
+        p.setTypeface(Typeface.create(s.font, s.face));
+        p.setTextSize(sp(s.size * f));
+        p.setLetterSpacing(s.spacing);
+        pSmall.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
+        pSmall.setTextSize(sp(12));
+        pSmall.setLetterSpacing(0.04f);
+
+        Paint.FontMetrics fm = p.getFontMetrics();
+        float lineH = fm.descent - fm.ascent;
+        switch (s.layout) {
+            case L_INLINE:
+            case L_INLINE_PAD:
+                contentW = p.measureText(hStr + ":" + mStr);
+                contentH = lineH;
+                break;
+            case L_SPLIT: {
+                float big = p.getTextSize();
+                p.setTextSize(big * 0.46f);
+                float wm = p.measureText(mStr);
+                p.setTextSize(big);
+                contentW = p.measureText(hStr) + dp(6) + wm;
+                contentH = lineH;
+                break;
+            }
+            case L_STACK:
+                contentW = Math.max(p.measureText(hStr), p.measureText(mStr));
+                contentH = lineH * 1.84f;
+                break;
+            case L_DAY:
+                contentW = Math.max(p.measureText(dayStr), pSmall.measureText(smallStr));
+                contentH = lineH + dp(20);
+                break;
+            default:
+                contentW = dp(2);
+                contentH = dp(2);
+                break;
+        }
+    }
+
+    @Override
+    protected void onMeasure(int wSpec, int hSpec) {
+        prepare();
+        int w = resolveSize((int) Math.ceil(contentW) + (int) dp(8), wSpec);
+        int h = (int) Math.ceil(contentH) + (int) dp(6);
+        setMeasuredDimension(w, h);
+    }
+
+    private void setPaint(int part) {
+        S s = BASE[style / 2];
+        boolean dim = (style % 2 == 1) && part == 0;
+        int c = dim ? ((color & 0x00FFFFFF) | 0x73000000) : color;
+        p.setColor(c);
+        if (s.mode == STROKE) {
+            p.setStyle(Paint.Style.STROKE);
+            p.setStrokeWidth(dp(1.4f));
+            p.clearShadowLayer();
+        } else {
+            p.setStyle(Paint.Style.FILL);
+            if (shadow) {
+                p.setShadowLayer(dp(3), 0f, dp(1), 0x66000000);
+            } else {
+                p.clearShadowLayer();
+            }
+        }
+    }
+
+    @Override
+    protected void onDraw(Canvas canvas) {
+        S s = BASE[style / 2];
+        if (s.layout == L_NONE) return;
+        prepare();
+        float ox = right ? (getWidth() - contentW - dp(4)) : dp(4);
+        Paint.FontMetrics fm = p.getFontMetrics();
+        float base = dp(3) - fm.ascent;
+        switch (s.layout) {
+            case L_INLINE:
+            case L_INLINE_PAD: {
+                setPaint(0);
+                String first = hStr + ":";
+                canvas.drawText(first, ox, base, p);
+                float w1 = p.measureText(first);
+                setPaint(1);
+                canvas.drawText(mStr, ox + w1, base, p);
+                break;
+            }
+            case L_SPLIT: {
+                setPaint(0);
+                canvas.drawText(hStr, ox, base, p);
+                float w1 = p.measureText(hStr);
+                float big = p.getTextSize();
+                p.setTextSize(big * 0.46f);
+                setPaint(1);
+                canvas.drawText(mStr, ox + w1 + dp(6), base, p);
+                p.setTextSize(big);
+                break;
+            }
+            case L_STACK: {
+                float lineH = fm.descent - fm.ascent;
+                setPaint(0);
+                canvas.drawText(hStr, ox, base, p);
+                setPaint(1);
+                canvas.drawText(mStr, ox, base + lineH * 0.92f, p);
+                break;
+            }
+            case L_DAY: {
+                setPaint(0);
+                canvas.drawText(dayStr, ox, base, p);
+                pSmall.setColor((color & 0x00FFFFFF) | 0xE6000000);
+                if (shadow) {
+                    pSmall.setShadowLayer(dp(3), 0f, dp(1), 0x66000000);
+                } else {
+                    pSmall.clearShadowLayer();
+                }
+                canvas.drawText(smallStr, ox, base + fm.descent + dp(16), pSmall);
+                break;
+            }
+            default:
+                break;
+        }
+    }
+}
