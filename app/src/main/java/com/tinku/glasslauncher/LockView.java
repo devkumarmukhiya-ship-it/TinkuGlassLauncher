@@ -29,6 +29,7 @@ public class LockView extends View {
     private final Paint tickPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint pillPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint pillText = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint secPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint datePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint battStroke = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint battFill = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -89,6 +90,11 @@ public class LockView extends View {
         pillText.setTypeface(medium);
         pillText.setTextSize(sp(21));
         pillText.setTextAlign(Paint.Align.CENTER);
+
+        secPaint.setColor(Color.WHITE);
+        secPaint.setTypeface(medium);
+        secPaint.setTextSize(sp(12));
+        secPaint.setTextAlign(Paint.Align.CENTER);
 
         datePaint.setColor(Color.WHITE);
         datePaint.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
@@ -207,14 +213,16 @@ public class LockView extends View {
         }
 
         float R = w * 0.26f;
-        float pillW = dp(70);
+        float pillW = dp(86);
         float pillH = dp(36);
         float cy = h * 0.44f;
         float pillX = w * 0.5f;
-        float cx = pillX - R;
+        // wheel ko "abhi ko second" pill ko bhitra, dayan kona ma pugchha (video jasto)
+        float pointerX = pillX + pillW / 2f - dp(20);
+        float cx = pointerX - R;
 
         // ticks (60 ota, har second ko ek)
-        float tickR = R + pillW / 2f + dp(10);
+        float tickR = R + dp(26);
         for (int i = 0; i < 60; i++) {
             float deg = wrap(i - sec) * 6f;
             if (Math.abs(deg) > 105f) continue;
@@ -246,7 +254,10 @@ public class LockView extends View {
         // minute pill (fixed)
         rect.set(pillX - pillW / 2f, cy - pillH / 2f, pillX + pillW / 2f, cy + pillH / 2f);
         canvas.drawRoundRect(rect, pillH / 2f, pillH / 2f, pillPaint);
-        canvas.drawText(two(min), pillX, centerBaseline(pillText, cy), pillText);
+        canvas.drawText(two(min), pillX - dp(10), centerBaseline(pillText, cy), pillText);
+        // abhi ko second (pill bhitra, minute ko dayan tira)
+        secPaint.setAlpha(210);
+        canvas.drawText(two((int) sec), pointerX, centerBaseline(secPaint, cy), secPaint);
 
         // hour
         canvas.drawText(String.valueOf(hour), pillX - pillW / 2f - dp(14),
@@ -254,7 +265,7 @@ public class LockView extends View {
 
         // date + day
         float tw = Math.max(datePaint.measureText(dateStr), datePaint.measureText(dayStr));
-        float dateX = pillX + pillW / 2f + dp(54) + dp(18);
+        float dateX = pointerX + dp(26) + dp(9) + dp(26);
         dateX = Math.min(dateX, w - tw - dp(14));
         canvas.drawText(dateStr, dateX, cy + dp(8), datePaint);
         canvas.drawText(dayStr, dateX, cy + dp(24), datePaint);

@@ -319,7 +319,7 @@ public class MainActivity extends Activity {
         // wallpaper mathi halka dark gradient (text spasta dekhincha)
         View scrim = new View(this);
         scrim.setBackground(new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
-            new int[] { 0x26000000, 0x00000000, 0x2E000000 }));
+            new int[] { 0x00000000, 0x00000000, 0x00000000 }));
         rootFrame.addView(scrim, 0, new FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
 
@@ -423,7 +423,7 @@ public class MainActivity extends Activity {
 
     private Drawable glassPanel(boolean blur) {
         GradientDrawable g = new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,
-            new int[] { blur ? 0x733A4254 : 0xE63A4254, blur ? 0x593A4254 : 0xCC3A4254 });
+            new int[] { 0x00000000, 0x00000000 });
         float rr = dp(30);
         g.setCornerRadii(new float[] { 0, 0, rr, rr, rr, rr, 0, 0 });
         g.setStroke(dp(1), 0x1FFFFFFF);
