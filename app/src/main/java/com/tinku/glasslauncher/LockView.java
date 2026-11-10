@@ -22,7 +22,7 @@ import java.util.Calendar;
 import java.util.Date;
 import java.util.Locale;
 
-/** Black lock screen like the video: big hour, minute dial wheel, date + day, battery. */
+/** Black lock screen: hour, minute pill, running second wheel, date + day, battery. */
 public class LockView extends View {
     private final Paint hourPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint numPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -36,15 +36,28 @@ public class LockView extends View {
     private final RectF rect = new RectF();
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final GestureDetector detector;
+    private final SimpleDateFormat dateFmt = new SimpleDateFormat("d MMM yyyy", Locale.ENGLISH);
+    private final SimpleDateFormat dayFmt = new SimpleDateFormat("EEEE", Locale.ENGLISH);
     private VelocityTracker vt;
     private float downY;
     private boolean unlocking = false;
 
+    // cache (har frame ma dobara nikaalnu pardaina)
+    private int cachedDay = -1;
+    private String dateStr = "";
+    private String dayStr = "";
+    private long lastBattMs = 0;
+    private int battPct = -1;
+
     private final Runnable ticker = new Runnable() {
         @Override
         public void run() {
-            if (getVisibility() == View.VISIBLE) invalidate();
-            handler.postDelayed(this, 1000);
+            if (getVisibility() == View.VISIBLE) {
+                invalidate();
+                handler.postDelayed(this, 33);
+            } else {
+                handler.postDelayed(this, 1000);
+            }
         }
     };
 
@@ -135,6 +148,8 @@ public class LockView extends View {
         setTranslationY(0f);
         setAlpha(1f);
         setVisibility(View.VISIBLE);
+        handler.removeCallbacks(ticker);
+        handler.post(ticker);
         invalidate();
     }
 
@@ -174,12 +189,22 @@ public class LockView extends View {
         int h = getHeight();
         if (w == 0 || h == 0) return;
 
+        long nowMs = System.currentTimeMillis();
         Calendar cal = Calendar.getInstance();
         boolean is24 = DateFormat.is24HourFormat(getContext());
         int hour = cal.get(is24 ? Calendar.HOUR_OF_DAY : Calendar.HOUR);
         if (!is24 && hour == 0) hour = 12;
         int min = cal.get(Calendar.MINUTE);
-        float m = min + cal.get(Calendar.SECOND) / 60f;
+        // chaldo second (smooth): wheel har second 6 degree ghumchha
+        float sec = cal.get(Calendar.SECOND) + cal.get(Calendar.MILLISECOND) / 1000f;
+
+        int dayKey = cal.get(Calendar.YEAR) * 400 + cal.get(Calendar.DAY_OF_YEAR);
+        if (dayKey != cachedDay) {
+            cachedDay = dayKey;
+            Date d = cal.getTime();
+            dateStr = dateFmt.format(d).toUpperCase(Locale.ENGLISH);
+            dayStr = dayFmt.format(d).toUpperCase(Locale.ENGLISH);
+        }
 
         float R = w * 0.26f;
         float pillW = dp(70);
@@ -188,10 +213,10 @@ public class LockView extends View {
         float pillX = w * 0.5f;
         float cx = pillX - R;
 
-        // ticks (outer ring)
+        // ticks (60 ota, har second ko ek)
         float tickR = R + pillW / 2f + dp(10);
         for (int i = 0; i < 60; i++) {
-            float deg = wrap(i - m) * 6f;
+            float deg = wrap(i - sec) * 6f;
             if (Math.abs(deg) > 105f) continue;
             double a = Math.toRadians(deg);
             float cos = (float) Math.cos(a);
@@ -204,9 +229,9 @@ public class LockView extends View {
                 cx + (tickR + len) * cos, cy - (tickR + len) * sin, tickPaint);
         }
 
-        // numbers (00, 05 ... 55) on the wheel
+        // second numbers (00, 05 ... 55)
         for (int v = 0; v < 60; v += 5) {
-            float d = wrap(v - m);
+            float d = wrap(v - sec);
             if (Math.abs(d) < 3.4f) continue;
             float deg = d * 6f;
             if (Math.abs(deg) > 100f) continue;
@@ -218,35 +243,34 @@ public class LockView extends View {
             canvas.drawText(two(v), px, centerBaseline(numPaint, py), numPaint);
         }
 
-        // current minute pill
+        // minute pill (fixed)
         rect.set(pillX - pillW / 2f, cy - pillH / 2f, pillX + pillW / 2f, cy + pillH / 2f);
         canvas.drawRoundRect(rect, pillH / 2f, pillH / 2f, pillPaint);
         canvas.drawText(two(min), pillX, centerBaseline(pillText, cy), pillText);
 
-        // hour (left of the pill)
+        // hour
         canvas.drawText(String.valueOf(hour), pillX - pillW / 2f - dp(14),
             centerBaseline(hourPaint, cy), hourPaint);
 
-        // date + day (right side)
-        Date now = new Date();
-        String s1 = new SimpleDateFormat("d MMM yyyy", Locale.ENGLISH).format(now).toUpperCase(Locale.ENGLISH);
-        String s2 = new SimpleDateFormat("EEEE", Locale.ENGLISH).format(now).toUpperCase(Locale.ENGLISH);
-        float tw = Math.max(datePaint.measureText(s1), datePaint.measureText(s2));
+        // date + day
+        float tw = Math.max(datePaint.measureText(dateStr), datePaint.measureText(dayStr));
         float dateX = pillX + pillW / 2f + dp(54) + dp(18);
         dateX = Math.min(dateX, w - tw - dp(14));
-        canvas.drawText(s1, dateX, cy + dp(8), datePaint);
-        canvas.drawText(s2, dateX, cy + dp(24), datePaint);
+        canvas.drawText(dateStr, dateX, cy + dp(8), datePaint);
+        canvas.drawText(dayStr, dateX, cy + dp(24), datePaint);
 
-        // battery (bottom)
-        int level = -1;
-        int scale = 100;
-        Intent b = getContext().registerReceiver(null, new IntentFilter(Intent.ACTION_BATTERY_CHANGED));
-        if (b != null) {
-            level = b.getIntExtra(BatteryManager.EXTRA_LEVEL, -1);
-            scale = b.getIntExtra(BatteryManager.EXTRA_SCALE, 100);
+        // battery (har 20 second ma matra padhne)
+        if (nowMs - lastBattMs > 20000 || battPct < 0) {
+            lastBattMs = nowMs;
+            Intent b = getContext().registerReceiver(null, new IntentFilter(Intent.ACTION_BATTERY_CHANGED));
+            if (b != null) {
+                int level = b.getIntExtra(BatteryManager.EXTRA_LEVEL, -1);
+                int scale = b.getIntExtra(BatteryManager.EXTRA_SCALE, 100);
+                if (level >= 0 && scale > 0) battPct = Math.round(level * 100f / scale);
+            }
         }
-        if (level >= 0 && scale > 0) {
-            int pct = Math.round(level * 100f / scale);
+        if (battPct >= 0) {
+            int pct = battPct;
             String t = pct + "%";
             float bw = dp(8);
             float bh = dp(14);

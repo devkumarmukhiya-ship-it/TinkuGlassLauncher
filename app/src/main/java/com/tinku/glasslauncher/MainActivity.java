@@ -244,6 +244,7 @@ public class MainActivity extends Activity {
         });
 
         setupV7();
+        setupV8();
         setupAlphabetTouch();
         buildAlphabetBar();
         applyClockStyle();
@@ -318,7 +319,7 @@ public class MainActivity extends Activity {
         // wallpaper mathi halka dark gradient (text spasta dekhincha)
         View scrim = new View(this);
         scrim.setBackground(new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
-            new int[] { 0x99000000, 0x40000000, 0x99000000 }));
+            new int[] { 0x26000000, 0x00000000, 0x2E000000 }));
         rootFrame.addView(scrim, 0, new FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
 
@@ -382,6 +383,7 @@ public class MainActivity extends Activity {
             // already gone
         }
         screenReceiver = null;
+        unregisterV8();
     }
 
     private void showLockNow() {
@@ -421,11 +423,132 @@ public class MainActivity extends Activity {
 
     private Drawable glassPanel(boolean blur) {
         GradientDrawable g = new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,
-            new int[] { blur ? 0x590B0E12 : 0xD90B0E12, blur ? 0x290B0E12 : 0xA60B0E12 });
+            new int[] { blur ? 0x733A4254 : 0xE63A4254, blur ? 0x593A4254 : 0xCC3A4254 });
         float rr = dp(30);
         g.setCornerRadii(new float[] { 0, 0, rr, rr, rr, rr, 0, 0 });
         g.setStroke(dp(1), 0x1FFFFFFF);
         return g;
+    }
+
+    // ===== Step 8: day+date slot (+ buttons), clear wallpaper =====
+    private TextView plusTop;
+    private TextView plusBottom;
+    private TextView infoTop;
+    private TextView infoBottom;
+    private View.OnClickListener plusClick;
+    private BroadcastReceiver infoReceiver;
+
+    private void setupV8() {
+        // status bar transparent: wallpaper pura screen ma spasta dekhincha (Niagara jasto)
+        Window win = getWindow();
+        win.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS);
+        win.setStatusBarColor(0);
+        win.getDecorView().setSystemUiVisibility(
+            View.SYSTEM_UI_FLAG_LAYOUT_STABLE | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN);
+
+        // clock ko shadow (wallpaper jun sukai bhaye pani padhna milne)
+        textClock.setShadowLayer(8f, 0f, 2f, 0x66000000);
+
+        // "+" tap garda day/date mathi ya tala jaanchha
+        plusClick = new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                boolean top = (v == plusTop);
+                prefs.edit().putString("dateslot", top ? "top" : "bottom").apply();
+                refreshInfo();
+                TextView shown = top ? infoTop : infoBottom;
+                shown.setAlpha(0f);
+                shown.animate().alpha(1f).setDuration(220).start();
+            }
+        };
+
+        clockBox.setOrientation(LinearLayout.VERTICAL);
+        plusTop = makePlus();
+        plusBottom = makePlus();
+        infoTop = makeInfo();
+        infoBottom = makeInfo();
+        clockBox.addView(plusTop, 0, new LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        clockBox.addView(infoTop, 1, new LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        clockBox.addView(plusBottom, new LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        clockBox.addView(infoBottom, new LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        textDate.setVisibility(View.GONE);
+
+        infoReceiver = new BroadcastReceiver() {
+            @Override
+            public void onReceive(Context context, Intent intent) {
+                refreshInfo();
+            }
+        };
+        IntentFilter f = new IntentFilter();
+        f.addAction(Intent.ACTION_TIME_TICK);
+        f.addAction(Intent.ACTION_DATE_CHANGED);
+        f.addAction(Intent.ACTION_TIMEZONE_CHANGED);
+        f.addAction(Intent.ACTION_TIME_CHANGED);
+        registerReceiver(infoReceiver, f);
+
+        refreshInfo();
+        applyV8Align();
+    }
+
+    private TextView makePlus() {
+        TextView t = new TextView(this);
+        t.setText("+");
+        t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 20);
+        t.setTextColor(0xCCFFFFFF);
+        t.setTypeface(Typeface.create("sans-serif-light", Typeface.NORMAL));
+        t.setIncludeFontPadding(false);
+        t.setPadding(dp(2), dp(6), dp(14), dp(6));
+        t.setShadowLayer(6f, 0f, 1f, 0x66000000);
+        t.setOnClickListener(plusClick);
+        return t;
+    }
+
+    private TextView makeInfo() {
+        TextView t = new TextView(this);
+        t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
+        t.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
+        t.setLetterSpacing(0.18f);
+        t.setLineSpacing(0f, 1.1f);
+        t.setTextColor(0xF2FFFFFF);
+        t.setPadding(dp(2), 0, dp(2), dp(4));
+        t.setShadowLayer(6f, 0f, 1f, 0x66000000);
+        return t;
+    }
+
+    private void refreshInfo() {
+        if (infoTop == null || infoBottom == null) return;
+        java.util.Date now = new java.util.Date();
+        String day = new java.text.SimpleDateFormat("EEEE", java.util.Locale.ENGLISH)
+            .format(now).toUpperCase(java.util.Locale.ENGLISH);
+        String date = new java.text.SimpleDateFormat("dd/MM/yyyy", java.util.Locale.ENGLISH).format(now);
+        String text = day + "\n" + date;
+        infoTop.setText(text);
+        infoBottom.setText(text);
+        boolean top = !"bottom".equals(prefs.getString("dateslot", "top"));
+        infoTop.setVisibility(top ? View.VISIBLE : View.GONE);
+        infoBottom.setVisibility(top ? View.GONE : View.VISIBLE);
+    }
+
+    private void applyV8Align() {
+        if (plusTop == null) return;
+        int g = isLeft() ? Gravity.LEFT : Gravity.RIGHT;
+        plusTop.setGravity(g);
+        plusBottom.setGravity(g);
+        infoTop.setGravity(g);
+        infoBottom.setGravity(g);
+    }
+
+    private void unregisterV8() {
+        try {
+            if (infoReceiver != null) unregisterReceiver(infoReceiver);
+        } catch (Exception e) {
+            // already gone
+        }
+        infoReceiver = null;
     }
 
     private int dp(int v) {
@@ -515,6 +638,7 @@ public class MainActivity extends Activity {
         int g = isLeft() ? Gravity.LEFT : Gravity.RIGHT;
         textClock.setGravity(g);
         textDate.setGravity(g);
+        applyV8Align();
         refreshFavorites();
     }
 
@@ -985,6 +1109,7 @@ public class MainActivity extends Activity {
                 row.setGravity(Gravity.CENTER_VERTICAL | (left ? Gravity.LEFT : Gravity.RIGHT));
                 row.setPadding(0, dp(8), 0, dp(8));
                 tv.setTextSize(13);
+                tv.setShadowLayer(6f, 0f, 1f, 0x66000000);
                 tv.setMaxWidth(dp(240));
                 if (left) {
                     tv.setPadding(dp(16), 0, 0, 0);
