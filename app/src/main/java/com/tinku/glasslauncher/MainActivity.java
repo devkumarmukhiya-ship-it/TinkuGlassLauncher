@@ -247,6 +247,7 @@ public class MainActivity extends Activity {
 
         setupV7();
         setupV8();
+        setupV12();
         setupGestures();
         setupAlphabetTouch();
         buildAlphabetBar();
@@ -481,6 +482,8 @@ public class MainActivity extends Activity {
             @Override
             public void onClick(View v) {
                 boolean top = (v == plusTop);
+                toggleSection(top);
+                if (true) return;
                 prefs.edit().putString("dateslot", top ? "top" : "bottom").apply();
                 refreshInfo();
                 TextView shown = top ? infoTop : infoBottom;
@@ -547,6 +550,8 @@ public class MainActivity extends Activity {
     }
 
     private void refreshInfo() {
+        refreshInfoV12();
+        if (true) return;
         if (infoTop == null || infoBottom == null) return;
         java.util.Date now = new java.util.Date();
         String day = new java.text.SimpleDateFormat("EEEE", java.util.Locale.ENGLISH)
@@ -747,6 +752,118 @@ public class MainActivity extends Activity {
         } catch (Throwable t) {
             Toast.makeText(this, "Could not open the notification panel", Toast.LENGTH_SHORT).show();
         }
+    }
+
+    // ===== Step 12: + / - show-hide, text tone, anti-overlap =====
+    private void refreshInfoV12() {
+        if (infoTop == null || infoBottom == null || plusTop == null || plusBottom == null) return;
+        java.util.Date now = new java.util.Date();
+        String day = new java.text.SimpleDateFormat("EEEE", java.util.Locale.ENGLISH)
+            .format(now).toUpperCase(java.util.Locale.ENGLISH);
+        String date = new java.text.SimpleDateFormat("dd/MM/yyyy", java.util.Locale.ENGLISH).format(now);
+        boolean showTop = prefs.getBoolean("showtop", false);
+        boolean showBottom = prefs.getBoolean("showbottom", false)
+            || prefs.getBoolean("weather", false) || prefs.getBoolean("showbat", false);
+        infoTop.setText(day + "\n" + date);
+        String extra = extraInfo();
+        infoBottom.setText(extra.length() > 0 ? extra : "WEATHER...");
+        infoTop.setVisibility(showTop ? View.VISIBLE : View.GONE);
+        infoBottom.setVisibility(showBottom ? View.VISIBLE : View.GONE);
+        plusTop.setText(showTop ? "\u2212" : "+");
+        plusBottom.setText(showBottom ? "\u2212" : "+");
+    }
+
+    /** top = true: day/date (clock ko mathi), false: weather + battery (clock ko tala) */
+    private void toggleSection(boolean top) {
+        boolean on;
+        SharedPreferences.Editor ed = prefs.edit();
+        if (top) {
+            on = !prefs.getBoolean("showtop", false);
+            ed.putBoolean("showtop", on);
+        } else {
+            on = !(prefs.getBoolean("showbottom", false)
+                || prefs.getBoolean("weather", false) || prefs.getBoolean("showbat", false));
+            ed.putBoolean("showbottom", on);
+            ed.putBoolean("weather", on);
+            ed.putBoolean("showbat", on);
+        }
+        ed.apply();
+        if (!top && on) refreshWeather(true);
+        refreshInfoV12();
+        if (on) {
+            TextView shown = top ? infoTop : infoBottom;
+            shown.setAlpha(0f);
+            shown.animate().alpha(1f).setDuration(220).start();
+        }
+    }
+
+    private int homeTextColor() {
+        return prefs.getBoolean("darktext", false) ? 0xFF1B1F27 : 0xFFFFFFFF;
+    }
+
+    private void applyTextTone() {
+        boolean dark = prefs.getBoolean("darktext", false);
+        int main = dark ? 0xFF1B1F27 : 0xFFFFFFFF;
+        int soft = dark ? 0xCC1B1F27 : 0xCCFFFFFF;
+        float sr = dark ? 0f : 8f;
+        int sc = dark ? 0 : 0x66000000;
+        textClock.setTextColor(main);
+        textClock.setShadowLayer(sr, 0f, 2f, sc);
+        if (infoTop != null) {
+            infoTop.setTextColor(main);
+            infoTop.setShadowLayer(sr * 0.75f, 0f, 1f, sc);
+        }
+        if (infoBottom != null) {
+            infoBottom.setTextColor(main);
+            infoBottom.setShadowLayer(sr * 0.75f, 0f, 1f, sc);
+        }
+        if (plusTop != null) {
+            plusTop.setTextColor(soft);
+            plusTop.setShadowLayer(sr * 0.75f, 0f, 1f, sc);
+        }
+        if (plusBottom != null) {
+            plusBottom.setTextColor(soft);
+            plusBottom.setShadowLayer(sr * 0.75f, 0f, 1f, sc);
+        }
+        if (dayView != null) dayView.setColor(main);
+        refreshFavorites();
+    }
+
+    /** clock block lamo bhayo bhane favourites list tala sarne (overlap nahune) */
+    private void nudgeFavs() {
+        if (clockBox.getWidth() == 0 || favoritesBox.getWidth() == 0) return;
+        float cl = clockBox.getX();
+        float cr = cl + clockBox.getWidth();
+        float fl = favoritesBox.getX();
+        float fr = fl + favoritesBox.getWidth();
+        if (cr < fl || fr < cl) return;
+        float ft = favoritesBox.getY();
+        if (ft < clockBox.getY()) return;
+        float limit = clockBox.getY() + clockBox.getHeight() + dp(14);
+        if (ft < limit) favoritesBox.setY(limit);
+    }
+
+    private void setupV12() {
+        if (!prefs.getBoolean("v12", false)) {
+            prefs.edit().putBoolean("v12", true).putBoolean("darktext", true).apply();
+        }
+        clockBox.addOnLayoutChangeListener(new View.OnLayoutChangeListener() {
+            @Override
+            public void onLayoutChange(View v, int l, int t, int r, int b,
+                                       int oldL, int oldT, int oldR, int oldB) {
+                if ((r - l) != (oldR - oldL) || (b - t) != (oldB - oldT)) {
+                    applyFavPos();
+                    rootFrame.post(new Runnable() {
+                        @Override
+                        public void run() {
+                            nudgeFavs();
+                        }
+                    });
+                }
+            }
+        });
+        applyTextTone();
+        refreshInfoV12();
     }
 
     private int dp(int v) {
@@ -1081,6 +1198,7 @@ public class MainActivity extends Activity {
         addSwitchRow(box, "Monochrome icons", "mono", () -> refreshAll());
         addSwitchRow(box, "Stacked clock (hour over minute)", "stacked", () -> applyClockStyle());
         addSwitchRow(box, "Lock screen (clock dial)", "lockscreen", () -> {});
+        addSwitchRow(box, "Dark text on home (light wallpaper)", "darktext", () -> applyTextTone());
         addChoiceRow(box, "Favourites layout", "favlayout", "free",
             new String[] { "free", "vertical", "horizontal" },
             new String[] { "Free", "Vertical line", "Horizontal line" },
@@ -1359,6 +1477,8 @@ public class MainActivity extends Activity {
                 row.setPadding(0, dp(8), 0, dp(8));
                 tv.setTextSize(13);
                 tv.setShadowLayer(6f, 0f, 1f, 0x66000000);
+                tv.setTextColor(homeTextColor());
+                if (prefs.getBoolean("darktext", false)) tv.setShadowLayer(0f, 0f, 0f, 0);
                 tv.setMaxWidth(dp(240));
                 if (left) {
                     tv.setPadding(dp(16), 0, 0, 0);

@@ -44,4 +44,9 @@ public class DayView extends View {
         canvas.drawText(text, 4, 4 - fm.ascent, p);
         canvas.restore();
     }
+
+    public void setColor(int c) {
+        p.setColor(c);
+        invalidate();
+    }
 }
