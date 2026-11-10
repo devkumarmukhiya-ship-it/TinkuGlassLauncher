@@ -16,6 +16,9 @@ import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
+import android.content.BroadcastReceiver;
+import android.content.IntentFilter;
+import android.util.TypedValue;
 import android.os.Build;
 import android.os.Bundle;
 import android.provider.Settings;
@@ -240,6 +243,7 @@ public class MainActivity extends Activity {
             }
         });
 
+        setupV7();
         setupAlphabetTouch();
         buildAlphabetBar();
         applyClockStyle();
@@ -269,6 +273,159 @@ public class MainActivity extends Activity {
             textClock.setFormat24Hour("HH:mm");
             textClock.setLineSpacing(0f, 1f);
         }
+    }
+
+    // ===== Step 7: lock screen, ubho weekday, video-style home =====
+    private LockView lockView;
+    private DayView dayView;
+    private boolean dayOpen = false;
+    private BroadcastReceiver screenReceiver;
+
+    private void setupV7() {
+        if (!prefs.getBoolean("v7", false)) {
+            SharedPreferences.Editor ed = prefs.edit();
+            ed.putBoolean("v7", true);
+            ed.putBoolean("lockscreen", true);
+            ed.putBoolean("mono", true);
+            ed.putBoolean("stacked", true);
+            ed.putString("align", "left");
+            ed.putString("favalign", "left");
+            ed.putString("favlayout", "vertical");
+            ed.putFloat("cx", 0.07f);
+            ed.putFloat("cy", 0.07f);
+            ed.putFloat("fx", 0.07f);
+            ed.putFloat("fy", 0.40f);
+            ed.apply();
+            Set<String> favs = getFavorites();
+            if (favs.isEmpty()) {
+                String[] want = {
+                    "com.android.vending", "com.instagram.android",
+                    "com.google.android.apps.tachyon", "com.google.android.apps.messaging",
+                    "com.google.android.apps.photos", "com.android.settings"
+                };
+                for (int i = 0; i < want.length; i++) {
+                    for (int j = 0; j < installedApps.size(); j++) {
+                        if (installedApps.get(j).activityInfo.packageName.equals(want[i])) {
+                            favs.add(want[i]);
+                            break;
+                        }
+                    }
+                }
+                saveFavorites(favs);
+            }
+        }
+
+        // wallpaper mathi halka dark gradient (text spasta dekhincha)
+        View scrim = new View(this);
+        scrim.setBackground(new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
+            new int[] { 0x99000000, 0x40000000, 0x99000000 }));
+        rootFrame.addView(scrim, 0, new FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+
+        // home clock/date style
+        textClock.setTypeface(Typeface.create("sans-serif-condensed", Typeface.BOLD));
+        textClock.setTextSize(TypedValue.COMPLEX_UNIT_SP, 54);
+        textClock.setIncludeFontPadding(false);
+        textClock.setTextColor(0xFFFFFFFF);
+        textDate.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
+        textDate.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+        textDate.setLetterSpacing(0.16f);
+        textDate.setTextColor(0xCCFFFFFF);
+        textDate.setFormat12Hour("d MMM yyyy");
+        textDate.setFormat24Hour("d MMM yyyy");
+
+        // ubho THURSDAY (clock ma tap garda)
+        dayView = new DayView(this);
+        dayView.setVisibility(View.GONE);
+        dayView.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                toggleDay();
+            }
+        });
+        rootFrame.addView(dayView, new FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+            Gravity.TOP | Gravity.LEFT));
+        View.OnClickListener dayClick = new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                toggleDay();
+            }
+        };
+        clockBox.setOnClickListener(dayClick);
+        textClock.setOnClickListener(dayClick);
+        textDate.setOnClickListener(dayClick);
+
+        // lock screen (sabai bhanda mathi)
+        lockView = new LockView(this);
+        lockView.setVisibility(prefs.getBoolean("lockscreen", true) ? View.VISIBLE : View.GONE);
+        rootFrame.addView(lockView, new FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+
+        screenReceiver = new BroadcastReceiver() {
+            @Override
+            public void onReceive(Context context, Intent intent) {
+                if (!prefs.getBoolean("lockscreen", true)) return;
+                hideOverlay();
+                if (searchOverlay.getVisibility() == View.VISIBLE) hideSearch();
+                if (dayOpen) toggleDay();
+                lockView.showLock();
+            }
+        };
+        registerReceiver(screenReceiver, new IntentFilter(Intent.ACTION_SCREEN_OFF));
+    }
+
+    private void unregisterV7() {
+        try {
+            if (screenReceiver != null) unregisterReceiver(screenReceiver);
+        } catch (Exception e) {
+            // already gone
+        }
+        screenReceiver = null;
+    }
+
+    private void showLockNow() {
+        if (lockView == null) return;
+        hideOverlay();
+        lockView.showLock();
+    }
+
+    private void toggleDay() {
+        dayView.animate().cancel();
+        clockBox.animate().cancel();
+        if (dayOpen) {
+            dayOpen = false;
+            dayView.animate().alpha(0f).translationX(-dp(16)).setDuration(180)
+                .withEndAction(new Runnable() {
+                    @Override
+                    public void run() {
+                        if (!dayOpen) dayView.setVisibility(View.GONE);
+                    }
+                }).start();
+            clockBox.animate().alpha(1f).setDuration(220).start();
+        } else {
+            dayOpen = true;
+            dayView.setDay(new java.text.SimpleDateFormat("EEEE", java.util.Locale.ENGLISH)
+                .format(new java.util.Date()).toUpperCase(java.util.Locale.ENGLISH));
+            FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) dayView.getLayoutParams();
+            lp.leftMargin = (int) clockBox.getX() + dp(2);
+            lp.topMargin = (int) clockBox.getY();
+            dayView.setLayoutParams(lp);
+            dayView.setAlpha(0f);
+            dayView.setTranslationX(-dp(16));
+            dayView.setVisibility(View.VISIBLE);
+            dayView.animate().alpha(1f).translationX(0f).setDuration(240).start();
+            clockBox.animate().alpha(0f).setDuration(200).start();
+        }
+    }
+
+    private Drawable glassPanel(boolean blur) {
+        GradientDrawable g = new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,
+            new int[] { blur ? 0x590B0E12 : 0xD90B0E12, blur ? 0x290B0E12 : 0xA60B0E12 });
+        float rr = dp(30);
+        g.setCornerRadii(new float[] { 0, 0, rr, rr, rr, rr, 0, 0 });
+        g.setStroke(dp(1), 0x1FFFFFFF);
+        return g;
     }
 
     private int dp(int v) {
@@ -600,6 +757,7 @@ public class MainActivity extends Activity {
 
         addSwitchRow(box, "Monochrome icons", "mono", () -> refreshAll());
         addSwitchRow(box, "Stacked clock (hour over minute)", "stacked", () -> applyClockStyle());
+        addSwitchRow(box, "Lock screen (clock dial)", "lockscreen", () -> {});
         addChoiceRow(box, "Favourites layout", "favlayout", "free",
             new String[] { "free", "vertical", "horizontal" },
             new String[] { "Free", "Vertical line", "Horizontal line" },
@@ -617,6 +775,7 @@ public class MainActivity extends Activity {
         showSheet(null, "Home screen",
             new String[] {
                 "Settings",
+                "Show lock screen",
                 "Favourites: icon on left",
                 "Favourites: icon on right",
                 "Reset favourites positions",
@@ -624,6 +783,7 @@ public class MainActivity extends Activity {
             },
             new int[] {
                 android.R.drawable.ic_menu_preferences,
+                android.R.drawable.ic_lock_idle_lock,
                 0,
                 0,
                 android.R.drawable.ic_menu_revert,
@@ -631,6 +791,7 @@ public class MainActivity extends Activity {
             },
             new Runnable[] {
                 () -> showSettings(),
+                () -> showLockNow(),
                 () -> { prefs.edit().putString("favalign", "left").apply(); refreshFavorites(); },
                 () -> { prefs.edit().putString("favalign", "right").apply(); refreshFavorites(); },
                 () -> {
@@ -800,7 +961,7 @@ public class MainActivity extends Activity {
             final LinearLayout row = new LinearLayout(this);
             ImageView iv = new ImageView(this);
             iv.setImageDrawable(AppAdapter.iconOf(this, info));
-            LinearLayout.LayoutParams ilp = new LinearLayout.LayoutParams(dp(48), dp(48));
+            LinearLayout.LayoutParams ilp = new LinearLayout.LayoutParams(dp(38), dp(38));
 
             TextView tv = new TextView(this);
             tv.setText(labelOf(info));
@@ -823,7 +984,7 @@ public class MainActivity extends Activity {
                 row.setOrientation(LinearLayout.HORIZONTAL);
                 row.setGravity(Gravity.CENTER_VERTICAL | (left ? Gravity.LEFT : Gravity.RIGHT));
                 row.setPadding(0, dp(8), 0, dp(8));
-                tv.setTextSize(22);
+                tv.setTextSize(13);
                 tv.setMaxWidth(dp(240));
                 if (left) {
                     tv.setPadding(dp(16), 0, 0, 0);
@@ -1171,10 +1332,10 @@ public class MainActivity extends Activity {
             blur = wm != null && wm.isCrossWindowBlurEnabled();
         }
         if (blur) {
-            w.setBackgroundDrawable(new ColorDrawable(0x40000000));
-            w.setBackgroundBlurRadius(100);
+            w.setBackgroundDrawable(glassPanel(true));
+            w.setBackgroundBlurRadius(160);
         } else {
-            w.setBackgroundDrawable(new ColorDrawable(0x99000000));
+            w.setBackgroundDrawable(glassPanel(false));
         }
         drawerDialog.show();
     }
@@ -1187,6 +1348,7 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        unregisterV7();
         if (isDrawerOpen()) drawerDialog.dismiss();
         super.onDestroy();
     }
@@ -1228,6 +1390,7 @@ public class MainActivity extends Activity {
 
     @Override
     public void onBackPressed() {
+        if (lockView != null && lockView.getVisibility() == View.VISIBLE) return;
         if (searchOverlay.getVisibility() == View.VISIBLE) {
             hideSearch();
         } else if (isDrawerOpen()) {
