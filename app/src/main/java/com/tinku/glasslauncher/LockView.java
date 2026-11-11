@@ -297,10 +297,14 @@ public class LockView extends View {
         canvas.drawText(two(hour), cx, centerBaseline(hourPaint, cy), hourPaint);
 
         if (showDate) {
-            float dateX = cx + ringRight + w * 0.04f * sc;
-            dateX = Math.min(dateX, w - tw - dp(14));
-            canvas.drawText(dateStr, dateX, cy + dp(6), datePaint);
-            canvas.drawText(dayStr, dateX, cy + dp(20), datePaint);
+            float ds = fpref("lock_dscale", 1f);
+            datePaint.setTextSize(sp(10) * ds);
+            float tw2 = Math.max(datePaint.measureText(dateStr), datePaint.measureText(dayStr));
+            float dateX = cx + ringRight + w * 0.04f * sc + fpref("lock_ddx", 0f) * w;
+            dateX = Math.max(dp(6), Math.min(dateX, w - tw2 - dp(6)));
+            canvas.drawText(dateStr, dateX, cy + dp(6) * ds, datePaint);
+            canvas.drawText(dayStr, dateX, cy + dp(20) * ds, datePaint);
+            datePaint.setTextSize(sp(10));
         }
 
         if (showBatt) {
@@ -316,10 +320,12 @@ public class LockView extends View {
             if (battPct >= 0) {
                 int pct = battPct;
                 String t = pct + "%";
-                float bw = dp(8);
-                float bh = dp(14);
-                float total = bw + dp(8) + battText.measureText(t);
-                float bx = (w - total) / 2f;
+                float bs = fpref("lock_bscale", 1f);
+                battText.setTextSize(sp(10) * bs);
+                float bw = dp(8) * bs;
+                float bh = dp(14) * bs;
+                float total = bw + dp(8) * bs + battText.measureText(t);
+                float bx = (w - total) / 2f + fpref("lock_bdx", 0f) * w;
                 float by = h * byF;
                 rect.set(bx, by - bh / 2f, bx + bw, by + bh / 2f);
                 canvas.drawRoundRect(rect, dp(2), dp(2), battStroke);
@@ -329,7 +335,7 @@ public class LockView extends View {
                 float bottom = by + bh / 2f - dp(1.5f);
                 rect.set(bx + dp(1.5f), bottom - inner * pct / 100f, bx + bw - dp(1.5f), bottom);
                 canvas.drawRect(rect, battFill);
-                canvas.drawText(t, bx + bw + dp(8), centerBaseline(battText, by), battText);
+                canvas.drawText(t, bx + bw + dp(8) * bs, centerBaseline(battText, by), battText);
             }
         }
     }

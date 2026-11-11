@@ -514,9 +514,9 @@ public class MainActivity extends Activity {
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         clockBox.addView(infoTop, 1, new LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        clockBox.addView(plusBottom, new LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         clockBox.addView(infoBottom, new LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        clockBox.addView(plusBottom, new LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         textDate.setVisibility(View.GONE);
 
@@ -1473,25 +1473,31 @@ public class MainActivity extends Activity {
         LinearLayout box = sheetBox("Lock screen setup");
         addSwitchRow(box, "Lock screen on", "lockscreen", () -> {});
         addChoiceRow(box, "Show lock screen after screen off", "lock_delay", "0",
-            new String[] { "0", "15", "30", "60", "300", "1800", "-1" },
-            new String[] { "Immediately", "After 15 seconds", "After 30 seconds", "After 1 minute",
+            new String[] { "0", "5", "10", "15", "30", "60", "300", "1800", "-1" },
+            new String[] { "Immediately", "After 5 seconds", "After 10 seconds", "After 15 seconds",
+                "After 30 seconds", "After 1 minute",
                 "After 5 minutes", "After 30 minutes", "Never (only at launch)" },
             () -> {});
         addChoiceRow(box, "Lock after idle on home", "lock_idle", "0",
-            new String[] { "0", "30", "60", "120", "300" },
-            new String[] { "Off", "30 seconds", "1 minute", "2 minutes", "5 minutes" },
+            new String[] { "0", "5", "10", "30", "60", "120", "300" },
+            new String[] { "Off", "5 seconds", "10 seconds", "30 seconds", "1 minute", "2 minutes", "5 minutes" },
             () -> scheduleIdleLock());
         addSeekRow(box, "Clock: up / down", "lock_cy", 0.20f, 0.70f, 0.44f, null);
         addSeekRow(box, "Clock: left / right", "lock_dx", -0.25f, 0.25f, 0f, null);
         addSeekRow(box, "Clock size", "lock_scale", 0.70f, 1.30f, 1f, null);
         addSeekRow(box, "Battery: up / down", "lock_by", 0.70f, 0.95f, 0.86f, null);
+        addSeekRow(box, "Battery: size", "lock_bscale", 0.70f, 2.00f, 1f, null);
+        addSeekRow(box, "Battery: left / right", "lock_bdx", -0.40f, 0.40f, 0f, null);
+        addSeekRow(box, "Date and day: size", "lock_dscale", 0.70f, 1.80f, 1f, null);
+        addSeekRow(box, "Date and day: left / right", "lock_ddx", -0.30f, 0.30f, 0f, null);
         addSwitchRow(box, "Show date and day", "lock_date", () -> {});
         addSwitchRow(box, "Show seconds wheel", "lock_sec", () -> {});
         addSwitchRow(box, "Show battery", "lock_batt", () -> {});
 
         TextView reset = makeButton("Reset position and size", 0xFF00695C, 0xFFD7E8E5);
         reset.setOnClickListener(v -> {
-            prefs.edit().remove("lock_cy").remove("lock_dx").remove("lock_scale").remove("lock_by").apply();
+            prefs.edit().remove("lock_cy").remove("lock_dx").remove("lock_scale").remove("lock_by")
+                .remove("lock_bscale").remove("lock_bdx").remove("lock_dscale").remove("lock_ddx").apply();
             d.dismiss();
             showLockSettings();
         });
@@ -1564,6 +1570,7 @@ public class MainActivity extends Activity {
         lp.leftMargin = dp(24);
         lp.rightMargin = dp(24);
         rootFrame.addView(tinkuStatus, lp);
+        tinkuSetupDot();
 
         tinku = new Tinku(this, new Tinku.Listener() {
             @Override
@@ -1698,6 +1705,42 @@ public class MainActivity extends Activity {
         if (tinkuStatus != null) tinkuStatus.setVisibility(View.GONE);
     }
 
+    // ===== Step 18: Tinku mic indicator (green = on, white = off) =====
+    private View tinkuDot;
+    private boolean tinkuDotOn = false;
+    private final Runnable tinkuDotRun = new Runnable() {
+        @Override
+        public void run() {
+            boolean on = tinku != null && tinku.isActive();
+            if (tinkuDot != null && on != tinkuDotOn) {
+                tinkuDotOn = on;
+                tinkuDotPaint();
+            }
+            tinkuH.postDelayed(this, 300);
+        }
+    };
+
+    private void tinkuDotPaint() {
+        if (tinkuDot == null) return;
+        GradientDrawable g = new GradientDrawable();
+        g.setShape(GradientDrawable.OVAL);
+        g.setColor(tinkuDotOn ? 0xFF2ECC71 : 0xFFFFFFFF);
+        g.setStroke(dp(1), tinkuDotOn ? 0xFF1E8449 : 0x66000000);
+        tinkuDot.setBackground(g);
+    }
+
+    private void tinkuSetupDot() {
+        tinkuDot = new View(this);
+        tinkuDotPaint();
+        tinkuDot.setOnClickListener(v -> tinkuStartPtt());
+        FrameLayout.LayoutParams dlp = new FrameLayout.LayoutParams(
+            dp(16), dp(16), Gravity.TOP | Gravity.RIGHT);
+        dlp.topMargin = dp(58);
+        dlp.rightMargin = dp(20);
+        rootFrame.addView(tinkuDot, dlp);
+        tinkuH.removeCallbacks(tinkuDotRun);
+        tinkuH.post(tinkuDotRun);
+    }
     private void tinkuLangChanged() {
         if (tinku != null && tinku.isActive()) tinku.start(tinkuMode == 2, tinkuLang());
     }
@@ -1917,6 +1960,7 @@ public class MainActivity extends Activity {
     }
 
     private void tinkuSpeakShutdown() {
+        tinkuH.removeCallbacks(tinkuDotRun);
         tinkuSpeaking = false;
         if (tinkuSpeak != null) tinkuSpeak.shutdown();
         tinkuSpeak = null;
