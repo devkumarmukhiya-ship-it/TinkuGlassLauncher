@@ -1174,14 +1174,11 @@ public class MainActivity extends Activity {
     private void showWidgetSheet() {
         final Dialog d = new Dialog(this);
         d.requestWindowFeature(Window.FEATURE_NO_TITLE);
+
+        // main options (adha sheet ma dekhine) pahila, baki mathi swipe garda
         LinearLayout box = new LinearLayout(this);
         box.setOrientation(LinearLayout.VERTICAL);
-        box.setPadding(dp(16), dp(24), dp(16), dp(24));
-        GradientDrawable bg = new GradientDrawable();
-        bg.setColor(0xFFEBEBEB);
-        float r = dp(30);
-        bg.setCornerRadii(new float[] { r, r, r, r, 0, 0, 0, 0 });
-        box.setBackground(bg);
+        box.setPadding(dp(16), dp(6), dp(16), dp(28));
 
         TextView title = new TextView(this);
         title.setText("Tinku widget");
@@ -1200,12 +1197,8 @@ public class MainActivity extends Activity {
                 if (prefs.getBoolean("weather", false)) refreshWeather(true);
                 refreshInfoV12();
             }), rowLp());
-        box.addView(widgetRow("\u229E", "Add Custom Widget", "Next step ma aaucha", false, null,
-            () -> Toast.makeText(this, "Add Custom Widget: next step ma", Toast.LENGTH_SHORT).show(), null), rowLp());
         box.addView(widgetRow("\u2195", "Move Widget", null, true, null,
             () -> { d.dismiss(); startDrag(clockBox, "cx", "cy"); }, null), rowLp());
-        box.addView(widgetRow("\u25B7", "Show Media Widget", "While playing music (next step)", false, null,
-            () -> Toast.makeText(this, "Media Widget: next step ma", Toast.LENGTH_SHORT).show(), null), rowLp());
         box.addView(widgetRow("\u25AE", "Show Battery Percentage", null, true, "showbat",
             null, () -> refreshInfoV12()), rowLp());
 
@@ -1214,18 +1207,122 @@ public class MainActivity extends Activity {
 
         box.addView(widgetRow("\u2606", "Edit favourites", null, true, null,
             () -> { d.dismiss(); showFavMenu(); }, null), rowLp());
-        box.addView(widgetRow("\u25A3", "Lock screen", "Timer, position, date, battery", true, null,
-            () -> { d.dismiss(); showLockSettings(); }, null), rowLp());
-        box.addView(widgetRow("\u2699\uFE0E", "Tinku settings", null, true, null,
+        box.addView(widgetRow("\u2699\uFE0E", "Tinku settings", "Lock screen, voice, glass and more", true, null,
             () -> { d.dismiss(); showSettings(); }, null), rowLp());
 
-        android.widget.ScrollView sv = new android.widget.ScrollView(this);
+        View gap2 = new View(this);
+        box.addView(gap2, new LinearLayout.LayoutParams(1, dp(12)));
+
+        box.addView(widgetRow("\u229E", "Add Custom Widget", "Next step ma aaucha", false, null,
+            () -> Toast.makeText(this, "Add Custom Widget: next step ma", Toast.LENGTH_SHORT).show(), null), rowLp());
+        box.addView(widgetRow("\u25B7", "Show Media Widget", "While playing music (next step)", false, null,
+            () -> Toast.makeText(this, "Media Widget: next step ma", Toast.LENGTH_SHORT).show(), null), rowLp());
+
+        final int screenH = getResources().getDisplayMetrics().heightPixels;
+        final int fullH = (int) (screenH * 0.92f);
+        final int peekH = (int) (screenH * 0.58f);
+        final int collapsedY = fullH - peekH;
+        final int dismissY = collapsedY + dp(90);
+        final int slop = android.view.ViewConfiguration.get(this).getScaledTouchSlop();
+        final boolean[] expanded = { false };
+        final float[] st = new float[3];
+
+        final ScrollView sv = new ScrollView(this);
+        sv.setVerticalScrollBarEnabled(false);
         sv.addView(box);
-        d.setContentView(sv);
+
+        final LinearLayout panel = new LinearLayout(this) {
+            @Override
+            public boolean onInterceptTouchEvent(MotionEvent ev) {
+                int a = ev.getActionMasked();
+                if (a == MotionEvent.ACTION_DOWN) {
+                    st[0] = ev.getRawY();
+                    st[1] = getTranslationY();
+                    st[2] = 0f;
+                } else if (a == MotionEvent.ACTION_MOVE) {
+                    float dy = ev.getRawY() - st[0];
+                    if (Math.abs(dy) > slop) {
+                        if (!expanded[0]) {
+                            st[2] = 1f;
+                            return true;
+                        }
+                        if (dy > 0 && sv.getScrollY() == 0) {
+                            st[2] = 1f;
+                            return true;
+                        }
+                    }
+                }
+                return false;
+            }
+
+            @Override
+            public boolean onTouchEvent(MotionEvent ev) {
+                int a = ev.getActionMasked();
+                if (a == MotionEvent.ACTION_DOWN) {
+                    st[0] = ev.getRawY();
+                    st[1] = getTranslationY();
+                    return true;
+                }
+                if (a == MotionEvent.ACTION_MOVE) {
+                    float ty = st[1] + (ev.getRawY() - st[0]);
+                    if (ty < 0f) ty = 0f;
+                    setTranslationY(ty);
+                    st[2] = 1f;
+                    return true;
+                }
+                if (a == MotionEvent.ACTION_UP || a == MotionEvent.ACTION_CANCEL) {
+                    if (st[2] == 0f) return true;
+                    float ty = getTranslationY();
+                    if (ty > dismissY) {
+                        d.dismiss();
+                    } else {
+                        float target = ty < collapsedY / 2f ? 0f : (float) collapsedY;
+                        expanded[0] = target == 0f;
+                        animate().translationY(target).setDuration(180).start();
+                    }
+                    return true;
+                }
+                return true;
+            }
+        };
+        panel.setOrientation(LinearLayout.VERTICAL);
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(0xFFEBEBEB);
+        float r = dp(30);
+        bg.setCornerRadii(new float[] { r, r, r, r, 0, 0, 0, 0 });
+        panel.setBackground(bg);
+
+        View handle = new View(this);
+        GradientDrawable hb = new GradientDrawable();
+        hb.setColor(0xFFB8B8B8);
+        hb.setCornerRadius(dp(3));
+        handle.setBackground(hb);
+        LinearLayout.LayoutParams hlp = new LinearLayout.LayoutParams(dp(44), dp(5));
+        hlp.gravity = Gravity.CENTER_HORIZONTAL;
+        hlp.topMargin = dp(12);
+        hlp.bottomMargin = dp(10);
+        panel.addView(handle, hlp);
+        panel.addView(sv, new LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+
+        FrameLayout root = new FrameLayout(this);
+        root.setOnClickListener(v -> d.dismiss());
+        FrameLayout.LayoutParams plp = new FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, fullH, Gravity.BOTTOM);
+        root.addView(panel, plp);
+
+        panel.setTranslationY(fullH);
+        panel.post(new Runnable() {
+            @Override
+            public void run() {
+                panel.animate().translationY(collapsedY).setDuration(220).start();
+            }
+        });
+
+        d.setContentView(root);
         Window w = d.getWindow();
         w.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
-        w.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        w.setGravity(Gravity.BOTTOM);
+        w.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
         d.show();
     }
 
@@ -1447,7 +1544,7 @@ public class MainActivity extends Activity {
     };
 
     private void setupTinku() {
-        if (!prefs.contains("tinkulisten")) prefs.edit().putBoolean("tinkulisten", true).apply();
+        if (!prefs.getBoolean("tl_v17", false)) prefs.edit().putBoolean("tinkulisten", false).putBoolean("tl_v17", true).apply();
         tinkuStatus = new TextView(this);
         tinkuStatus.setTextColor(0xFFFFFFFF);
         tinkuStatus.setTextSize(15);
@@ -1550,7 +1647,7 @@ public class MainActivity extends Activity {
     private void tinkuApplyListen() {
         if (tinku == null || !tinkuResumed) return;
         if (tinkuSpeaking) return;
-        boolean want = prefs.getBoolean("tinkulisten", true);
+        boolean want = prefs.getBoolean("tinkulisten", false);
         if (!want) {
             if (tinku.isContinuous()) tinku.stop();
             return;
