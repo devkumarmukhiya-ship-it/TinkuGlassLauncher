@@ -1447,6 +1447,7 @@ public class MainActivity extends Activity {
     };
 
     private void setupTinku() {
+        if (!prefs.contains("tinkulisten")) prefs.edit().putBoolean("tinkulisten", true).apply();
         tinkuStatus = new TextView(this);
         tinkuStatus.setTextColor(0xFFFFFFFF);
         tinkuStatus.setTextSize(15);
@@ -1499,7 +1500,7 @@ public class MainActivity extends Activity {
 
             @Override
             public void onProblem(String message, boolean fatal) {
-                if (fatal) prefs.edit().putBoolean("tinkulisten", false).apply();
+                if (fatal && !message.startsWith("Internet")) prefs.edit().putBoolean("tinkulisten", false).apply();
                 tinkuShow(message, 3500);
             }
         });
@@ -1549,7 +1550,7 @@ public class MainActivity extends Activity {
     private void tinkuApplyListen() {
         if (tinku == null || !tinkuResumed) return;
         if (tinkuSpeaking) return;
-        boolean want = prefs.getBoolean("tinkulisten", false);
+        boolean want = prefs.getBoolean("tinkulisten", true);
         if (!want) {
             if (tinku.isContinuous()) tinku.stop();
             return;

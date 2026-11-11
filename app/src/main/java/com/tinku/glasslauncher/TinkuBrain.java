@@ -351,6 +351,15 @@ public class TinkuBrain {
 
     // ----------------------------------------------------------- wake word
 
+    /** "hey", "hello", "ok" etc. before/after Tinku are part of the wake phrase. */
+    private static boolean isGreet(Tok t) {
+        String s = t.lat;
+        return s.equals("hey") || s.equals("hay") || s.equals("hi") || s.equals("hello")
+            || s.equals("helo") || s.equals("hallo") || s.equals("halo") || s.equals("hullo")
+            || s.equals("ok") || s.equals("okay") || s.equals("oke") || s.equals("he")
+            || s.equals("hai");
+    }
+
     private static boolean wakeWord(String s) {
         if (s.equals("think") || s.equals("thing") || s.equals("thank") || s.equals("thanks")) return false;
         return s.matches("^(t|d|p)h?[ie]+n[gk]h?[aeiouy]+s?$");
@@ -481,6 +490,7 @@ public class TinkuBrain {
         if (needWake && wake == null) return null;
         for (int i = 0; i < all.size(); i++) {
             if (wake != null && (i == wake[0] || i == wake[1])) continue;
+            if (wake != null && isGreet(all.get(i))) continue;
             toks.add(all.get(i));
         }
 
