@@ -1,5 +1,11 @@
 package com.tinku.glasslauncher;
 
+import android.os.Looper;
+
+import android.os.Handler;
+
+import android.Manifest;
+
 import android.app.Activity;
 import android.app.Dialog;
 import android.content.Context;
@@ -250,6 +256,7 @@ public class MainActivity extends Activity {
         setupV12();
         setupV13();
         setupGestures();
+        setupTinku();
         setupAlphabetTouch();
         buildAlphabetBar();
         applyClockStyle();
@@ -262,6 +269,8 @@ public class MainActivity extends Activity {
     protected void onResume() {
         checkLockDue();
         super.onResume();
+        tinkuResumed = true;
+        tinkuApplyListen();
         refreshWeather(false);
         refreshInfo();
         loadApps();
@@ -1411,6 +1420,495 @@ public class MainActivity extends Activity {
         d.getWindow().setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
     }
 
+    // ===== Step 11: Tinku voice assistant =====
+    // The mic is open ONLY while: (a) push-to-talk (long-press the search button),
+    // or (b) the "tinkulisten" switch is on AND the launcher is on screen.
+    // onPause always closes it.
+
+    private static final int REQ_MIC = 311;
+    private Tinku tinku;
+    private TextView tinkuStatus;
+    private boolean tinkuResumed = false;
+    private int tinkuMode = 0;            // 0 mic closed, 1 push-to-talk, 2 always listening
+    private int tinkuAskedFor = 0;
+    private Runnable tinkuPending;
+    private String tinkuPendingSig = "";
+    private long tinkuAwakeUntil = 0;     // after a bare "Tinku", the next sentence needs no wake word
+    private final Handler tinkuH = new Handler(Looper.getMainLooper());
+    private final Runnable tinkuRestore = new Runnable() {
+        @Override
+        public void run() {
+            if (tinku != null && tinku.isActive()) {
+                tinkuStatus.setText(tinkuMode == 2 ? "● Tinku" : "● Listening…");
+            } else {
+                tinkuStatus.setVisibility(View.GONE);
+            }
+        }
+    };
+
+    private void setupTinku() {
+        tinkuStatus = new TextView(this);
+        tinkuStatus.setTextColor(0xFFFFFFFF);
+        tinkuStatus.setTextSize(15);
+        tinkuStatus.setMaxLines(4);
+        tinkuStatus.setEllipsize(TextUtils.TruncateAt.END);
+        tinkuStatus.setGravity(Gravity.CENTER);
+        tinkuStatus.setPadding(dp(16), dp(9), dp(16), dp(9));
+        GradientDrawable pill = new GradientDrawable();
+        pill.setColor(0xD9000000);
+        pill.setCornerRadius(dp(22));
+        tinkuStatus.setBackground(pill);
+        tinkuStatus.setVisibility(View.GONE);
+        FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+            Gravity.TOP | Gravity.CENTER_HORIZONTAL);
+        lp.topMargin = dp(52);
+        lp.leftMargin = dp(24);
+        lp.rightMargin = dp(24);
+        rootFrame.addView(tinkuStatus, lp);
+
+        tinku = new Tinku(this, new Tinku.Listener() {
+            @Override
+            public void onPartial(ArrayList<String> alts) {
+                tinkuHeard(alts, false);
+            }
+
+            @Override
+            public void onFinal(ArrayList<String> alts) {
+                tinkuHeard(alts, true);
+            }
+
+            @Override
+            public void onState(boolean listening) {
+                if (listening) {
+                    tinkuShow(tinkuMode == 2 ? "● Tinku" : "● Listening…", 0);
+                } else {
+                    tinkuMode = 0;
+                    tinkuCancelPending();
+                    tinkuH.removeCallbacks(tinkuRestore);
+                    tinkuH.postDelayed(tinkuRestore, 1800);
+                    // Push-to-talk ended: go back to always-listening if that switch is on.
+                    tinkuH.postDelayed(new Runnable() {
+                        @Override
+                        public void run() {
+                            tinkuApplyListen();
+                        }
+                    }, 800);
+                }
+            }
+
+            @Override
+            public void onProblem(String message, boolean fatal) {
+                if (fatal) prefs.edit().putBoolean("tinkulisten", false).apply();
+                tinkuShow(message, 3500);
+            }
+        });
+
+        searchButton.setOnLongClickListener(new View.OnLongClickListener() {
+            @Override
+            public boolean onLongClick(View v) {
+                tinkuStartPtt();
+                return true;
+            }
+        });
+    }
+
+    private String tinkuLang() {
+        return prefs.getString("tinkulang", "ne-NP");
+    }
+
+    private boolean tinkuHasMic() {
+        return Build.VERSION.SDK_INT < 23
+            || checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED;
+    }
+
+    private void tinkuAskMic(int forWhat) {
+        tinkuAskedFor = forWhat;
+        if (Build.VERSION.SDK_INT >= 23) {
+            requestPermissions(new String[] { Manifest.permission.RECORD_AUDIO }, REQ_MIC);
+        }
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int req, String[] perms, int[] res) {
+        super.onRequestPermissionsResult(req, perms, res);
+        if (req != REQ_MIC) return;
+        boolean ok = res.length > 0 && res[0] == PackageManager.PERMISSION_GRANTED;
+        int what = tinkuAskedFor;
+        tinkuAskedFor = 0;
+        if (!ok) {
+            if (what == 2) prefs.edit().putBoolean("tinkulisten", false).apply();
+            Toast.makeText(this, "Microphone permission denied. Tinku cannot listen.",
+                Toast.LENGTH_LONG).show();
+            return;
+        }
+        if (what == 1) tinkuStartPtt(); else tinkuApplyListen();
+    }
+
+    /** Make the mic match the settings. Safe to call any time. */
+    private void tinkuApplyListen() {
+        if (tinku == null || !tinkuResumed) return;
+        if (tinkuSpeaking) return;
+        boolean want = prefs.getBoolean("tinkulisten", false);
+        if (!want) {
+            if (tinku.isContinuous()) tinku.stop();
+            return;
+        }
+        if (tinku.isActive()) return;
+        if (!Tinku.available(this)) {
+            prefs.edit().putBoolean("tinkulisten", false).apply();
+            Toast.makeText(this, "Voice service not available on this phone (needs Google speech services)",
+                Toast.LENGTH_LONG).show();
+            return;
+        }
+        if (!tinkuHasMic()) {
+            tinkuAskMic(2);
+            return;
+        }
+        tinkuMode = 2;
+        tinku.start(true, tinkuLang());
+    }
+
+    private void tinkuStartPtt() {
+        if (tinku == null) return;
+        if (tinkuMode == 1 && tinku.isActive()) {
+            tinku.stop();
+            return;
+        }
+        if (!Tinku.available(this)) {
+            Toast.makeText(this, "Voice service not available on this phone (needs Google speech services)",
+                Toast.LENGTH_LONG).show();
+            return;
+        }
+        if (!tinkuHasMic()) {
+            tinkuAskMic(1);
+            return;
+        }
+        tinkuSpeakStop();
+        tinkuCancelPending();
+        tinkuMode = 1;
+        tinku.start(false, tinkuLang());
+    }
+
+    private void tinkuPause() {
+        tinkuResumed = false;
+        tinkuSpeakStop();
+        tinkuCancelPending();
+        if (tinku != null) tinku.stop();
+        tinkuMode = 0;
+        tinkuAwakeUntil = 0;
+        if (tinkuStatus != null) tinkuStatus.setVisibility(View.GONE);
+    }
+
+    private void tinkuLangChanged() {
+        if (tinku != null && tinku.isActive()) tinku.start(tinkuMode == 2, tinkuLang());
+    }
+
+    private void tinkuShow(String msg, int holdMs) {
+        if (tinkuStatus == null) return;
+        tinkuStatus.setText(msg);
+        tinkuStatus.setVisibility(View.VISIBLE);
+        tinkuH.removeCallbacks(tinkuRestore);
+        if (holdMs > 0) tinkuH.postDelayed(tinkuRestore, holdMs);
+    }
+
+    private void tinkuCancelPending() {
+        if (tinkuPending != null) tinkuH.removeCallbacks(tinkuPending);
+        tinkuPending = null;
+        tinkuPendingSig = "";
+    }
+
+    private List<String> tinkuLabels() {
+        List<String> l = new ArrayList<String>();
+        for (int i = 0; i < installedApps.size(); i++) l.add(labelOf(installedApps.get(i)));
+        return l;
+    }
+
+    private void tinkuHeard(ArrayList<String> alts, boolean fin) {
+        final TinkuBrain.Cmd c = TinkuBrain.parse(alts, tinkuLabels(),
+            tinkuMode == 2 && android.os.SystemClock.uptimeMillis() > tinkuAwakeUntil);
+        if (c == null) return;                          // not for Tinku
+        if (!fin) {
+            if (tinkuMode == 1 || c.type != TinkuBrain.NONE) {
+                String top = alts.get(0);
+                if (top.length() > 60) top = top.substring(0, 60) + "…";
+                tinkuShow("● " + top, 0);
+            }
+            if (c.sure && c.type != TinkuBrain.NONE) {
+                String sig = c.sig();
+                if (!sig.equals(tinkuPendingSig)) {
+                    tinkuCancelPending();
+                    tinkuPendingSig = sig;
+                    tinkuPending = new Runnable() {
+                        @Override
+                        public void run() {
+                            tinkuPending = null;
+                            tinkuPendingSig = "";
+                            if (tinku != null) tinku.consumed();
+                            tinkuRun(c);
+                        }
+                    };
+                    tinkuH.postDelayed(tinkuPending, 450);
+                }
+            } else {
+                tinkuCancelPending();
+            }
+            return;
+        }
+        tinkuCancelPending();
+        tinkuAwakeUntil = c.bareWake ? android.os.SystemClock.uptimeMillis() + 7000 : 0;
+        tinkuRun(c);
+    }
+
+    private void tinkuRun(TinkuBrain.Cmd c) {
+        if (tinkuPreRun(c)) return;
+        String say = c.say;
+        switch (c.type) {
+            case TinkuBrain.OPEN_APP:
+                if (c.app >= 0 && c.app < installedApps.size()) {
+                    if (searchOverlay.getVisibility() == View.VISIBLE) hideSearch();
+                    launchApp(installedApps.get(c.app));
+                }
+                break;
+            case TinkuBrain.TOGGLE: {
+                boolean cur = prefs.getBoolean(c.key, "lockscreen".equals(c.key));
+                boolean val = c.hasOnOff ? c.on : !cur;
+                prefs.edit().putBoolean(c.key, val).apply();
+                if ("mono".equals(c.key)) refreshAll();
+                else if ("stacked".equals(c.key)) applyClockStyle();
+                else if ("weather".equals(c.key)) { refreshInfo(); refreshWeather(false); }
+                else if ("showbat".equals(c.key)) refreshInfo();
+                say = c.say + (val ? " on" : " off");
+                break;
+            }
+            case TinkuBrain.SET:
+                prefs.edit().putString(c.key, c.value).apply();
+                if ("favlayout".equals(c.key)) refreshFavorites();
+                break;
+            case TinkuBrain.FAV_ADD:
+            case TinkuBrain.FAV_REMOVE:
+                if (c.app >= 0 && c.app < installedApps.size()) {
+                    String pkg = installedApps.get(c.app).activityInfo.packageName;
+                    Set<String> favs = getFavorites();
+                    if (c.type == TinkuBrain.FAV_REMOVE) {
+                        favs.remove(pkg);
+                        prefs.edit().remove("fpx:" + pkg).remove("fpy:" + pkg).apply();
+                    } else {
+                        favs.add(pkg);
+                    }
+                    saveFavorites(favs);
+                    refreshFavorites();
+                    refreshDrawerKeepScroll();
+                }
+                break;
+            case TinkuBrain.HIDE:
+                if (c.app >= 0 && c.app < installedApps.size()) {
+                    Set<String> h = getHidden();
+                    h.add(installedApps.get(c.app).activityInfo.packageName);
+                    saveHidden(h);
+                    refreshAll();
+                }
+                break;
+            case TinkuBrain.SEARCH:
+                showSearch();
+                searchInput.setText(c.value);
+                searchInput.setSelection(searchInput.getText().length());
+                break;
+            case TinkuBrain.NOTIF:
+                expandNotifications();
+                break;
+            case TinkuBrain.SETTINGS:
+                showSettings();
+                break;
+            case TinkuBrain.LOCK:
+                showLockNow();
+                break;
+            case TinkuBrain.HIDDEN_LIST:
+                showHiddenApps();
+                break;
+            case TinkuBrain.CLOSE:
+                if (searchOverlay.getVisibility() == View.VISIBLE) hideSearch();
+                hideOverlay();
+                break;
+            case TinkuBrain.SYSTEM:
+                tinkuOpenSystem(c.key);
+                break;
+            case TinkuBrain.INFO:
+                say = tinkuInfo(c.key);
+                break;
+            case TinkuBrain.STOP_LISTEN:
+                prefs.edit().putBoolean("tinkulisten", false).apply();
+                if (tinku != null) tinku.stop();
+                break;
+            default:
+                break;
+        }
+        if (say != null && say.length() > 0) {
+            tinkuShow(c.type == TinkuBrain.NONE ? say : "✓ " + say, 2500);
+        }
+        tinkuSpeakFor(c, say);
+    }
+
+    private String tinkuInfo(String key) {
+        if ("battery".equals(key)) return "Battery " + batteryPercent() + "%";
+        if ("weather".equals(key)) {
+            String w = prefs.getString("wtext", null);
+            return w != null ? w : "No weather yet. Turn on weather in Settings";
+        }
+        return new java.text.SimpleDateFormat("h:mm a · EEE, d MMM",
+            java.util.Locale.getDefault()).format(new java.util.Date());
+    }
+
+    private void tinkuOpenSystem(String key) {
+        String action;
+        boolean q = Build.VERSION.SDK_INT >= 29;
+        if ("wifi".equals(key)) action = q ? "android.settings.panel.action.INTERNET_CONNECTIVITY" : Settings.ACTION_WIFI_SETTINGS;
+        else if ("bluetooth".equals(key)) action = Settings.ACTION_BLUETOOTH_SETTINGS;
+        else if ("airplane".equals(key)) action = Settings.ACTION_AIRPLANE_MODE_SETTINGS;
+        else if ("hotspot".equals(key)) action = "android.settings.TETHER_SETTINGS";
+        else if ("location".equals(key)) action = Settings.ACTION_LOCATION_SOURCE_SETTINGS;
+        else if ("display".equals(key)) action = Settings.ACTION_DISPLAY_SETTINGS;
+        else if ("sound".equals(key)) action = q ? "android.settings.panel.action.VOLUME" : Settings.ACTION_SOUND_SETTINGS;
+        else action = Settings.ACTION_SETTINGS;
+        try {
+            Intent i = new Intent(action);
+            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            startActivity(i);
+        } catch (Throwable t) {
+            try {
+                Intent i = new Intent(Settings.ACTION_SETTINGS);
+                i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                startActivity(i);
+            } catch (Throwable ignored) {
+            }
+        }
+    }
+
+    // ===== Step 12: Tinku bolera jawaf dinxa =====
+    private TinkuSpeak tinkuSpeak;
+    private boolean tinkuSpeaking = false;
+
+    private boolean tinkuNe(String s) {
+        if (s == null) return false;
+        for (int i = 0; i < s.length(); i++) {
+            char ch = s.charAt(i);
+            if (ch >= '\u0900' && ch <= '\u097F') return true;
+        }
+        return false;
+    }
+
+    /** Speak text. The mic is closed while Tinku talks, so it never hears itself. */
+    private void tinkuSpeakOut(String text, boolean ne, final Runnable after) {
+        if (tinkuSpeak == null) tinkuSpeak = new TinkuSpeak(this);
+        tinkuSpeaking = true;
+        if (tinku != null) tinku.stop();
+        tinkuShow("Tinku: " + text, 6000);
+        tinkuSpeak.speak(text, ne ? "ne" : "en", new Runnable() {
+            @Override
+            public void run() {
+                tinkuSpeaking = false;
+                if (after != null) after.run();
+                if (tinkuResumed) tinkuApplyListen();
+            }
+        });
+    }
+
+    private void tinkuSpeakStop() {
+        tinkuSpeaking = false;
+        if (tinkuSpeak != null) tinkuSpeak.stop();
+    }
+
+    private void tinkuSpeakShutdown() {
+        tinkuSpeaking = false;
+        if (tinkuSpeak != null) tinkuSpeak.shutdown();
+        tinkuSpeak = null;
+    }
+
+    /** Handles "Tinku" alone and questions. true = fully handled here. */
+    private boolean tinkuPreRun(final TinkuBrain.Cmd c) {
+        final boolean ne = tinkuNe(c.heard);
+        if (c.bareWake) {
+            final boolean wasPtt = tinkuMode == 1;
+            tinkuSpeakOut(ne ? "हजुर?" : "Yes?", ne, new Runnable() {
+                @Override
+                public void run() {
+                    tinkuAwakeUntil = android.os.SystemClock.uptimeMillis() + 7000;
+                    if (wasPtt && tinkuResumed) tinkuStartPtt();
+                }
+            });
+            return true;
+        }
+        if (c.type != TinkuBrain.NONE) return false;
+        String a = TinkuAnswer.answer(c.heard, ne);
+        if (a != null) {
+            tinkuSpeakOut(a, ne, null);
+            return true;
+        }
+        final String q = TinkuAnswer.clean(c.heard);
+        if (q.split("\\s+").length >= 3) {
+            tinkuSpeakOut(ne ? "मैले यो थाहा पाइनँ, गुगलमा खोज्दै छु"
+                : "I don't know that one. Searching Google", ne, new Runnable() {
+                @Override
+                public void run() {
+                    tinkuWebSearch(q);
+                }
+            });
+        } else {
+            tinkuSpeakOut(ne ? "मैले बुझिनँ, फेरि भन्नुस्" : "Sorry, I didn't get that", ne, null);
+        }
+        return true;
+    }
+
+    private void tinkuWebSearch(String q) {
+        try {
+            Intent i = new Intent(Intent.ACTION_WEB_SEARCH);
+            i.putExtra(android.app.SearchManager.QUERY, q);
+            i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            startActivity(i);
+        } catch (Throwable t) {
+            try {
+                Intent v = new Intent(Intent.ACTION_VIEW,
+                    android.net.Uri.parse("https://www.google.com/search?q=" + android.net.Uri.encode(q)));
+                v.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                startActivity(v);
+            } catch (Throwable ignored) {
+            }
+        }
+    }
+
+    /** After a command ran: say the result out loud (not for commands that leave the launcher). */
+    private void tinkuSpeakFor(TinkuBrain.Cmd c, String say) {
+        boolean ne = tinkuNe(c.heard);
+        String t = null;
+        switch (c.type) {
+            case TinkuBrain.INFO:
+                if ("battery".equals(c.key)) {
+                    t = ne ? "ब्याट्री " + batteryPercent() + " प्रतिशत छ"
+                        : "Battery is " + batteryPercent() + " percent";
+                } else if ("weather".equals(c.key)) {
+                    String w = prefs.getString("wtext", null);
+                    if (w == null) {
+                        t = ne ? "मौसमको जानकारी छैन। सेटिङमा वेदर अन गर्नुस्"
+                            : "No weather yet. Turn on weather in settings";
+                    } else {
+                        t = (ne ? "मौसम " : "Weather ") + w;
+                    }
+                } else {
+                    t = TinkuAnswer.timeSpoken(ne);
+                }
+                break;
+            case TinkuBrain.TOGGLE:
+            case TinkuBrain.SET:
+            case TinkuBrain.FAV_ADD:
+            case TinkuBrain.FAV_REMOVE:
+            case TinkuBrain.HIDE:
+                t = ne ? "ठीक छ, भयो" : (say != null && say.length() > 0 ? say : "Done");
+                break;
+            default:
+                break;
+        }
+        if (t != null) tinkuSpeakOut(t, ne, null);
+    }
     private int dp(int v) {
         return (int) (v * getResources().getDisplayMetrics().density);
     }
@@ -1783,6 +2281,8 @@ public class MainActivity extends Activity {
             });
         addSwitchRow(box, "Show battery % under the date", "showbat", () -> refreshInfo());
         addSwitchRow(box, "Swipe gestures (down = notifications, up = search)", "gestures", () -> {});
+        addSwitchRow(box, "Listen for \"Tinku\" (mic ON only while launcher is open)", "tinkulisten",
+            () -> tinkuApplyListen());
 
         boolean blurOk = false;
         if (Build.VERSION.SDK_INT >= 31) {
@@ -2390,11 +2890,14 @@ public class MainActivity extends Activity {
     protected void onPause() {
         lockHandler.removeCallbacks(idleLockRun);
         super.onPause();
+        tinkuPause();
         hideOverlay();
     }
 
     @Override
     protected void onDestroy() {
+        tinkuPause();
+        tinkuSpeakShutdown();
         unregisterV7();
         if (isDrawerOpen()) drawerDialog.dismiss();
         super.onDestroy();
