@@ -394,9 +394,30 @@ public class MainActivity extends Activity {
             }
         };
         registerReceiver(screenReceiver, new IntentFilter(Intent.ACTION_SCREEN_OFF));
+
+        pkgReceiver = new BroadcastReceiver() {
+            @Override
+            public void onReceive(Context context, Intent intent) {
+                refreshAll();
+            }
+        };
+        IntentFilter pkgFilter = new IntentFilter();
+        pkgFilter.addAction(Intent.ACTION_PACKAGE_ADDED);
+        pkgFilter.addAction(Intent.ACTION_PACKAGE_REMOVED);
+        pkgFilter.addAction(Intent.ACTION_PACKAGE_CHANGED);
+        pkgFilter.addDataScheme("package");
+        registerReceiver(pkgReceiver, pkgFilter);
     }
 
+    private BroadcastReceiver pkgReceiver;
+
     private void unregisterV7() {
+        try {
+            if (pkgReceiver != null) unregisterReceiver(pkgReceiver);
+        } catch (Exception e) {
+            // already gone
+        }
+        pkgReceiver = null;
         try {
             if (screenReceiver != null) unregisterReceiver(screenReceiver);
         } catch (Exception e) {
