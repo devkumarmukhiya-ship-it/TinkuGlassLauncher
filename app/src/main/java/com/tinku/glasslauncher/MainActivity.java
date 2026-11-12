@@ -120,6 +120,10 @@ public class MainActivity extends Activity {
         textDate = findViewById(R.id.textDate);
         letterOverlay = findViewById(R.id.letterOverlay);
         textLetter = findViewById(R.id.textLetter);
+        FontKit.watch(this, favoritesBox, FontKit.HOME);
+        FontKit.watch(this, alphabetBar, FontKit.HOME);
+        FontKit.watch(this, listViewLetter, FontKit.ALL);
+        FontKit.watch(this, listViewSearch, FontKit.ALL);
 
         GradientDrawable circle = new GradientDrawable();
         circle.setShape(GradientDrawable.OVAL);
@@ -279,6 +283,7 @@ public class MainActivity extends Activity {
         applyAlign();
         applyClockPos();
         applyFavPos();
+        applyAppFont();
     }
 
     private void applyClockStyle() {
@@ -752,7 +757,7 @@ public class MainActivity extends Activity {
         w.setGravity(Gravity.BOTTOM);
         w.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE
             | WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
-        d.show();
+        showD(d);
         input.requestFocus();
     }
 
@@ -1063,7 +1068,7 @@ public class MainActivity extends Activity {
         w.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
         w.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         w.setGravity(Gravity.BOTTOM);
-        d.show();
+        showD(d);
     }
 
     private void addTapRow(LinearLayout box, String label, String sub, final Runnable r) {
@@ -1344,7 +1349,7 @@ public class MainActivity extends Activity {
         Window w = d.getWindow();
         w.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
         w.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
-        d.show();
+        showD(d);
     }
 
     private void showFavMenu() {
@@ -1443,6 +1448,74 @@ public class MainActivity extends Activity {
         return tile;
     }
 
+    private void showD(Dialog d) {
+        d.show();
+        FontKit.apply(this, d.getWindow().getDecorView(), FontKit.ALL);
+    }
+
+    private void applyAppFont() {
+        for (int i = 0; i < rootFrame.getChildCount(); i++) {
+            View ch = rootFrame.getChildAt(i);
+            boolean overlay = (ch == letterOverlay || ch == searchOverlay);
+            FontKit.apply(this, ch, overlay ? FontKit.ALL : FontKit.HOME);
+        }
+        FontKit.apply(this, letterOverlay, FontKit.ALL);
+    }
+
+    private void showFontPicker() {
+        final Dialog d = new Dialog(this, android.R.style.Theme_DeviceDefault_Light_NoActionBar);
+        ScrollView sv = new ScrollView(this);
+        sv.setBackgroundColor(0xFFEBEBEB);
+        LinearLayout col = new LinearLayout(this);
+        col.setOrientation(LinearLayout.VERTICAL);
+        col.setPadding(dp(16), dp(8), dp(16), dp(32));
+        TextView title = new TextView(this);
+        title.setText("Font style");
+        title.setTextSize(28);
+        title.setTextColor(0xFF777777);
+        title.setGravity(Gravity.CENTER);
+        title.setPadding(0, dp(48), 0, dp(8));
+        col.addView(title);
+        TextView hint = new TextView(this);
+        hint.setText("Tap a font to use it. Settings > Apply font to decides where it shows.");
+        hint.setTextSize(14);
+        hint.setTextColor(0xFF777777);
+        hint.setGravity(Gravity.CENTER);
+        hint.setPadding(dp(8), 0, dp(8), dp(16));
+        col.addView(hint);
+        final String cur = FontKit.chosenFile(this);
+        List<String[]> items = new ArrayList<String[]>();
+        items.add(new String[] { "System default", "" });
+        items.addAll(FontKit.available(this));
+        for (int i = 0; i < items.size(); i++) {
+            final String[] it = items.get(i);
+            TextView row = new TextView(this);
+            boolean on = it[1].equals(cur);
+            row.setText((on ? "\u2713  " : "") + it[0] + "\n05:00  Thu 12 Nov  \u0928\u092E\u0938\u094D\u0924\u0947");
+            Typeface tf = FontKit.load(this, it[1]);
+            if (tf != null) row.setTypeface(tf);
+            row.setTextSize(20);
+            row.setTextColor(0xFF111111);
+            row.setPadding(dp(18), dp(14), dp(18), dp(14));
+            GradientDrawable g = new GradientDrawable();
+            g.setCornerRadius(dp(16));
+            g.setColor(on ? 0xFFB2DFDB : 0xFFFFFFFF);
+            row.setBackground(g);
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            lp.setMargins(0, dp(6), 0, dp(6));
+            row.setOnClickListener(v -> {
+                prefs.edit().putString("tinkufont", it[1]).apply();
+                d.dismiss();
+                recreate();
+            });
+            col.addView(row, lp);
+        }
+        sv.addView(col);
+        d.setContentView(sv);
+        d.show();
+    }
+
     private void showClockStyles() {
         final Dialog d = new Dialog(this, android.R.style.Theme_DeviceDefault_Light_NoActionBar);
         android.widget.ScrollView sv = new android.widget.ScrollView(this);
@@ -1472,7 +1545,7 @@ public class MainActivity extends Activity {
         }
         sv.addView(col);
         d.setContentView(sv);
-        d.show();
+        showD(d);
         d.getWindow().setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
     }
 
@@ -1540,7 +1613,7 @@ public class MainActivity extends Activity {
         root.addView(sv, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, sh));
 
         d.setContentView(root);
-        d.show();
+        showD(d);
         d.getWindow().setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
     }
 
@@ -2403,6 +2476,11 @@ public class MainActivity extends Activity {
 
         addSwitchRow(box, "Monochrome icons", "mono", () -> refreshAll());
         addSwitchRow(box, "Stacked clock (hour over minute)", "stacked", () -> applyClockStyle());
+        addTapRow(box, "Font style", FontKit.label(this), () -> { d.dismiss(); showFontPicker(); });
+        addChoiceRow(box, "Apply font to", "fontscope", "clock",
+            new String[] { "clock", "home", "all" },
+            new String[] { "Clock only", "Home screen", "Whole launcher" },
+            () -> { d.dismiss(); recreate(); });
         addTapRow(box, "Lock screen setup", "Timer, position, date, battery", () -> showLockSettings());
         addSwitchRow(box, "Dark text on home (light wallpaper)", "darktext", () -> applyTextTone());
         addChoiceRow(box, "Favourites layout", "favlayout", "free",
@@ -2476,7 +2554,7 @@ public class MainActivity extends Activity {
         w.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
         w.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         w.setGravity(Gravity.BOTTOM);
-        d.show();
+        showD(d);
     }
 
     private void showHomeMenu() {
@@ -2647,7 +2725,7 @@ public class MainActivity extends Activity {
         w.setGravity(Gravity.BOTTOM);
         w.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE
             | WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
-        d.show();
+        showD(d);
         input.requestFocus();
     }
 
@@ -2835,7 +2913,7 @@ public class MainActivity extends Activity {
         w.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
         w.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         w.setGravity(Gravity.BOTTOM);
-        d.show();
+        showD(d);
     }
 
     private void showMenu(final ResolveInfo info) {

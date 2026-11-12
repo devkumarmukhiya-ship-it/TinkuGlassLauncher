@@ -25,6 +25,9 @@ public class ClockText extends View {
     private static final int L_STACK = 3;       // 05 over 00
     private static final int L_DAY = 4;         // Thu. big + small line
     private static final int L_NONE = 5;        // no clock
+    private static final int L_TIGHT = 6;       // 0500 (no colon)
+    private static final int L_GAP = 7;         // 05 00 (gap, no colon)
+    private static final int L_BARS = 8;        // T H U cut in two, info line in the middle
     private static final int FILL = 0;
     private static final int STROKE = 1;
 
@@ -65,7 +68,7 @@ public class ClockText extends View {
         new S(L_INLINE_PAD, "asset:Chango-Regular.ttf", Typeface.NORMAL, 44, FILL, 0f),
         new S(L_INLINE_PAD, "sans-serif-condensed", Typeface.NORMAL, 54, FILL, 0f),
         new S(L_STACK, "sans-serif-light", Typeface.NORMAL, 54, FILL, 0f),
-        new S(L_STACK, "sans-serif-condensed", Typeface.BOLD, 54, FILL, 0f),
+        new S(L_STACK, "asset:BebasNeue-Regular.ttf", Typeface.NORMAL, 58, FILL, 0f),
         new S(L_STACK, "sans-serif-black", Typeface.NORMAL, 52, FILL, 0f),
         new S(L_STACK, "sans-serif-thin", Typeface.NORMAL, 56, FILL, 0f),
         new S(L_STACK, "sans-serif-medium", Typeface.NORMAL, 54, STROKE, 0f),
@@ -75,13 +78,24 @@ public class ClockText extends View {
         new S(L_SPLIT, "sans-serif-light", Typeface.NORMAL, 58, STROKE, 0f),
         new S(L_DAY, "sans-serif-condensed", Typeface.BOLD, 60, FILL, 0f),
         new S(L_INLINE, "asset:Monoton-Regular.ttf", Typeface.NORMAL, 40, FILL, 0f),
-        new S(L_DAY, "asset:Mansalva-Regular.ttf", Typeface.NORMAL, 62, FILL, 0f)
+        new S(L_DAY, "asset:Mansalva-Regular.ttf", Typeface.NORMAL, 62, FILL, 0f),
+        new S(L_BARS, "sans-serif-light", Typeface.NORMAL, 62, FILL, 0.12f),
+        new S(L_BARS, "sans-serif-thin", Typeface.NORMAL, 58, FILL, 0.22f),
+        new S(L_GAP, "asset:BebasNeue-Regular.ttf", Typeface.NORMAL, 58, FILL, 0f),
+        new S(L_GAP, "asset:BebasNeue-Regular.ttf", Typeface.NORMAL, 58, STROKE, 0f),
+        new S(L_TIGHT, "asset:Chango-Regular.ttf", Typeface.NORMAL, 46, FILL, 0f),
+        new S(L_TIGHT, "asset:AbrilFatface-Regular.ttf", Typeface.NORMAL, 52, FILL, 0f),
+        new S(L_TIGHT, "sans-serif-light", Typeface.NORMAL, 54, STROKE, 0f),
+        new S(L_INLINE_PAD, "asset:Chewy-Regular.ttf", Typeface.NORMAL, 50, FILL, 0f),
+        new S(L_SPLIT, "asset:FredokaOne-Regular.ttf", Typeface.NORMAL, 56, FILL, 0f),
+        new S(L_SPLIT, "asset:Lobster-Regular.ttf", Typeface.NORMAL, 56, FILL, 0f)
     };
 
     public static final int COUNT = BASE.length * 2;
 
     public static boolean isDay(int idx) {
-        return BASE[Math.max(0, Math.min(COUNT - 1, idx)) / 2].layout == L_DAY;
+        int l = BASE[Math.max(0, Math.min(COUNT - 1, idx)) / 2].layout;
+        return l == L_DAY || l == L_BARS;
     }
 
     private final Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -96,6 +110,8 @@ public class ClockText extends View {
     private String mStr = "";
     private String dayStr = "";
     private String smallStr = "";
+    private String dayUp = "";
+    private String infoUp = "";
     private float contentW = 0f;
     private float contentH = 0f;
 
@@ -162,6 +178,10 @@ public class ClockText extends View {
 
     /** Font from assets/fonts when the name starts with "asset:", else a system font. Falls back safely. */
     private Typeface faceFor(S s) {
+        if (!sample) {
+            Typeface o = FontKit.chosen(getContext());
+            if (o != null) return o;
+        }
         if (s.font.startsWith("asset:")) {
             String name = s.font.substring(6);
             Typeface t = FACES.get(name);
@@ -222,6 +242,8 @@ public class ClockText extends View {
         boolean pad = s.layout != L_INLINE;
         hStr = pad ? two(h) : String.valueOf(h);
         mStr = two(m);
+        dayUp = dayStr.replace(".", "").toUpperCase(Locale.ENGLISH);
+        infoUp = smallStr.replace(" \u00b7 ", "   ").toUpperCase(Locale.ENGLISH);
 
         float f = sample ? 0.85f : 1f;
         p.setTypeface(faceFor(s));
@@ -229,7 +251,7 @@ public class ClockText extends View {
         p.setLetterSpacing(s.spacing);
         pSmall.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
         pSmall.setTextSize(sp(12));
-        pSmall.setLetterSpacing(0.04f);
+        pSmall.setLetterSpacing(s.layout == L_BARS ? 0.18f : 0.04f);
 
         Paint.FontMetrics fm = p.getFontMetrics();
         float lineH = fm.descent - fm.ascent;
@@ -248,6 +270,18 @@ public class ClockText extends View {
                 contentH = lineH;
                 break;
             }
+            case L_TIGHT:
+                contentW = p.measureText(hStr + mStr);
+                contentH = lineH;
+                break;
+            case L_GAP:
+                contentW = p.measureText(hStr) + dp(12) + p.measureText(mStr);
+                contentH = lineH;
+                break;
+            case L_BARS:
+                contentW = Math.max(p.measureText(dayUp), pSmall.measureText(infoUp));
+                contentH = lineH;
+                break;
             case L_STACK:
                 contentW = Math.max(p.measureText(hStr), p.measureText(mStr));
                 contentH = lineH * 1.84f;
@@ -326,6 +360,47 @@ public class ClockText extends View {
                 canvas.drawText(hStr, ox, base, p);
                 setPaint(1);
                 canvas.drawText(mStr, ox, base + lineH * 0.92f, p);
+                break;
+            }
+            case L_TIGHT: {
+                setPaint(0);
+                canvas.drawText(hStr, ox, base, p);
+                float w1 = p.measureText(hStr);
+                setPaint(1);
+                canvas.drawText(mStr, ox + w1, base, p);
+                break;
+            }
+            case L_GAP: {
+                setPaint(0);
+                canvas.drawText(hStr, ox, base, p);
+                float w1 = p.measureText(hStr);
+                setPaint(1);
+                canvas.drawText(mStr, ox + w1 + dp(12), base, p);
+                break;
+            }
+            case L_BARS: {
+                float mid = base - p.getTextSize() * 0.36f;
+                float half = dp(7);
+                float lw = ox + contentW + dp(4);
+                float dx = ox + (contentW - p.measureText(dayUp)) / 2f;
+                setPaint(0);
+                canvas.save();
+                canvas.clipRect(0f, 0f, lw, mid - half);
+                canvas.drawText(dayUp, dx, base, p);
+                canvas.restore();
+                setPaint(1);
+                canvas.save();
+                canvas.clipRect(0f, mid + half, lw, getHeight());
+                canvas.drawText(dayUp, dx, base, p);
+                canvas.restore();
+                pSmall.setColor((color & 0x00FFFFFF) | 0xE6000000);
+                if (shadow) {
+                    pSmall.setShadowLayer(dp(3), 0f, dp(1), 0x66000000);
+                } else {
+                    pSmall.clearShadowLayer();
+                }
+                float ix = ox + (contentW - pSmall.measureText(infoUp)) / 2f;
+                canvas.drawText(infoUp, ix, mid + pSmall.getTextSize() * 0.35f, pSmall);
                 break;
             }
             case L_DAY: {
