@@ -1576,6 +1576,10 @@ public class MainActivity extends Activity {
 
         LinearLayout box = sheetBox("Lock screen setup");
         addSwitchRow(box, "Lock screen on", "lockscreen", () -> {});
+        addTapRow(box, "Background photo", "Choose from gallery", () -> pickLockBg());
+        addTapRow(box, "Remove background photo", "Back to plain colour", () -> removeLockBg());
+        addTapRow(box, "Background colour", "Used when no photo is set",
+            () -> showColorPicker("Lock background colour", "lock_bgcolor", () -> {}));
         addChoiceRow(box, "Show lock screen after screen off", "lock_delay", "0",
             new String[] { "0", "5", "10", "15", "30", "60", "300", "1800", "-1" },
             new String[] { "Immediately", "After 5 seconds", "After 10 seconds", "After 15 seconds",
@@ -2245,6 +2249,55 @@ public class MainActivity extends Activity {
         Window w = d.getWindow();
         w.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
         d.show();
+    }
+    // ===== Step 31: lock screen background (gallery photo / colour) =====
+    private static final int REQ_LOCKBG = 3131;
+
+    private void pickLockBg() {
+        try {
+            Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+            i.addCategory(Intent.CATEGORY_OPENABLE);
+            i.setType("image/*");
+            startActivityForResult(i, REQ_LOCKBG);
+        } catch (Throwable t) {
+            Toast.makeText(this, "Gallery khulena", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private void removeLockBg() {
+        String old = prefs.getString("lock_bgfile", "");
+        if (old.length() > 0) {
+            try {
+                new java.io.File(old).delete();
+            } catch (Throwable ignored) {
+            }
+        }
+        prefs.edit().remove("lock_bgfile").apply();
+        if (lockView != null) lockView.invalidate();
+        Toast.makeText(this, "Photo hatayo", Toast.LENGTH_SHORT).show();
+    }
+
+    @Override
+    protected void onActivityResult(int req, int res, Intent data) {
+        super.onActivityResult(req, res, data);
+        if (req != REQ_LOCKBG || res != RESULT_OK || data == null || data.getData() == null) return;
+        try {
+            java.io.InputStream in = getContentResolver().openInputStream(data.getData());
+            java.io.File out = new java.io.File(getFilesDir(), "lockbg_" + System.currentTimeMillis() + ".jpg");
+            java.io.FileOutputStream fo = new java.io.FileOutputStream(out);
+            byte[] buf = new byte[16384];
+            int n;
+            while ((n = in.read(buf)) > 0) fo.write(buf, 0, n);
+            fo.close();
+            in.close();
+            String old = prefs.getString("lock_bgfile", "");
+            prefs.edit().putString("lock_bgfile", out.getAbsolutePath()).apply();
+            if (old.length() > 0) new java.io.File(old).delete();
+            if (lockView != null) lockView.invalidate();
+            Toast.makeText(this, "Lock screen background set", Toast.LENGTH_SHORT).show();
+        } catch (Throwable t) {
+            Toast.makeText(this, "Photo lina sakiyena", Toast.LENGTH_SHORT).show();
+        }
     }
     private int dp(int v) {
         return (int) (v * getResources().getDisplayMetrics().density);

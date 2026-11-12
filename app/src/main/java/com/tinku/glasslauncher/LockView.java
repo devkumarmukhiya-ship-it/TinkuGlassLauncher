@@ -5,6 +5,8 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.SharedPreferences;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
@@ -204,9 +206,61 @@ public class LockView extends View {
         return Math.max(0f, Math.min(1f, (Math.abs(deg) - band) / 12f));
     }
 
+    private Bitmap bgBmp;
+    private String bgLoaded = "";
+    private final Paint bgPaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
+
+    private void loadBg(String path) {
+        bgBmp = null;
+        try {
+            BitmapFactory.Options o = new BitmapFactory.Options();
+            o.inJustDecodeBounds = true;
+            BitmapFactory.decodeFile(path, o);
+            int ss = 1;
+            while (o.outWidth / ss > 1800 || o.outHeight / ss > 1800) ss *= 2;
+            BitmapFactory.Options o2 = new BitmapFactory.Options();
+            o2.inSampleSize = ss;
+            bgBmp = BitmapFactory.decodeFile(path, o2);
+        } catch (Throwable t) {
+            bgBmp = null;
+        }
+    }
+
+    /** Plain colour (lock_bgcolor, default black) + optional gallery photo (lock_bgfile), centre-cropped. */
+    private void drawBg(Canvas canvas) {
+        int col = Color.BLACK;
+        String path = "";
+        if (prefs != null) {
+            try {
+                col = prefs.getInt("lock_bgcolor", Color.BLACK);
+            } catch (Exception e) {
+                col = Color.BLACK;
+            }
+            path = prefs.getString("lock_bgfile", "");
+        }
+        canvas.drawColor(col);
+        if (path.length() == 0) {
+            bgBmp = null;
+            bgLoaded = "";
+            return;
+        }
+        if (!path.equals(bgLoaded)) {
+            loadBg(path);
+            bgLoaded = path;
+        }
+        if (bgBmp == null) return;
+        float vw = getWidth();
+        float vh = getHeight();
+        float sc = Math.max(vw / bgBmp.getWidth(), vh / bgBmp.getHeight());
+        float dw = bgBmp.getWidth() * sc;
+        float dh = bgBmp.getHeight() * sc;
+        RectF dst = new RectF((vw - dw) / 2f, (vh - dh) / 2f, (vw + dw) / 2f, (vh + dh) / 2f);
+        canvas.drawBitmap(bgBmp, null, dst, bgPaint);
+        canvas.drawColor(0x55000000);
+    }
     @Override
     protected void onDraw(Canvas canvas) {
-        canvas.drawColor(Color.BLACK);
+        drawBg(canvas);
         int w = getWidth();
         int h = getHeight();
         if (w == 0 || h == 0) return;
