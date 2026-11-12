@@ -3646,13 +3646,15 @@ public class MainActivity extends Activity {
               .putBoolean("greeting", true)
               .putBoolean("searchbar", true);
         }
+        // layout pani preset sanga: favourites vertical, sabai kura left
+        ed.putString("favlayout", "minimal".equals(name) ? "free" : "vertical")
+          .putString("favalign", "left")
+          .putString("align", "left");
         ed.apply();
 
         if (prefs.getBoolean("weather", false)) refreshWeather(true);
         if (prefs.getBoolean("events", false)) ensureCalendarPermission();
-        applyClockStyle();
-        applyTextTone();
-        applyClockStyleV13();
-        refreshInfoV12();
+        // screen fresh bata setup hunchha (preset ko sabai setting ek saath)
+        recreate();
     }
 }
