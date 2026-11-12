@@ -261,6 +261,7 @@ public class MainActivity extends Activity {
         setupV13();
         setupGestures();
         setupTinku();
+        setupV30();
         setupAlphabetTouch();
         buildAlphabetBar();
         applyClockStyle();
@@ -840,6 +841,8 @@ public class MainActivity extends Activity {
     }
 
     private int homeTextColor() {
+        int hcy = prefs.getInt("home_color", 0);
+        if (hcy != 0) return hcy;
         return prefs.getBoolean("darktext", false) ? 0xFF1B1F27 : 0xFFFFFFFF;
     }
 
@@ -849,6 +852,11 @@ public class MainActivity extends Activity {
         int soft = dark ? 0xCC1B1F27 : 0xCCFFFFFF;
         float sr = dark ? 0f : 8f;
         int sc = dark ? 0 : 0x66000000;
+        int hcx = prefs.getInt("home_color", 0);
+        if (hcx != 0) {
+            main = hcx;
+            soft = (hcx & 0x00FFFFFF) | 0xCC000000;
+        }
         textClock.setTextColor(main);
         textClock.setShadowLayer(sr, 0f, 2f, sc);
         if (infoTop != null) {
@@ -951,6 +959,8 @@ public class MainActivity extends Activity {
     private void applyClockStyleV13() {
         if (clockText == null) return;
         clockText.setStyleIndex(prefs.getInt("clockstyle", 36));
+        applyAnalogColors();
+        applyClockAlpha();
         clockBox.requestLayout();
     }
 
@@ -2145,6 +2155,97 @@ public class MainActivity extends Activity {
         }
         if (t != null) tinkuSpeakOut(t, ne, null);
     }
+    // ===== Step 30: clock opacity, analog colours, text colour =====
+    private SharedPreferences.OnSharedPreferenceChangeListener v30Listener;
+
+    private void setupV30() {
+        applyClockAlpha();
+        applyAnalogColors();
+        v30Listener = new SharedPreferences.OnSharedPreferenceChangeListener() {
+            @Override
+            public void onSharedPreferenceChanged(SharedPreferences shared, String key) {
+                if ("clk_alpha".equals(key)) applyClockAlpha();
+            }
+        };
+        prefs.registerOnSharedPreferenceChangeListener(v30Listener);
+    }
+
+    private void applyClockAlpha() {
+        if (clockText == null) return;
+        float a = 1f;
+        try {
+            a = prefs.getFloat("clk_alpha", 1f);
+        } catch (Exception e) {
+            a = 1f;
+        }
+        clockText.setAlpha(Math.max(0.1f, Math.min(1f, a)));
+    }
+
+    private void applyAnalogColors() {
+        if (clockText == null) return;
+        clockText.setAnalogColors(prefs.getInt("clk_hands", 0), prefs.getInt("clk_nums", 0));
+    }
+
+    /** Colour chooser: first circle = Auto (follow the normal text colour). */
+    private void showColorPicker(String title, final String key, final Runnable after) {
+        final Dialog d = new Dialog(this);
+        d.requestWindowFeature(Window.FEATURE_NO_TITLE);
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(dp(16), dp(20), dp(16), dp(20));
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(0xFFF1F1F1);
+        bg.setCornerRadius(dp(24));
+        box.setBackground(bg);
+        TextView t = new TextView(this);
+        t.setText(title);
+        t.setTextSize(20);
+        t.setTextColor(0xFF111111);
+        t.setPadding(dp(8), 0, 0, dp(10));
+        box.addView(t);
+        final int[] cols = { 0xFFFFFFFF, 0xFF000000, 0xFFE53935, 0xFFFB8C00, 0xFFFDD835, 0xFF43A047,
+            0xFF00897B, 0xFF00ACC1, 0xFF1E88E5, 0xFF5E35B1, 0xFFD81B60, 0xFF9E9E9E };
+        LinearLayout row = null;
+        for (int i = 0; i < cols.length + 1; i++) {
+            if (i % 4 == 0) {
+                row = new LinearLayout(this);
+                row.setOrientation(LinearLayout.HORIZONTAL);
+                box.addView(row);
+            }
+            final int c = i == 0 ? 0 : cols[i - 1];
+            TextView sw = new TextView(this);
+            sw.setGravity(Gravity.CENTER);
+            GradientDrawable g = new GradientDrawable();
+            g.setShape(GradientDrawable.OVAL);
+            g.setColor(i == 0 ? 0xFFE0E0E0 : c);
+            g.setStroke(dp(2), 0x33000000);
+            sw.setBackground(g);
+            if (i == 0) {
+                sw.setText("Auto");
+                sw.setTextSize(12);
+                sw.setTextColor(0xFF333333);
+            }
+            sw.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    if (c == 0) {
+                        prefs.edit().remove(key).apply();
+                    } else {
+                        prefs.edit().putInt(key, c).apply();
+                    }
+                    d.dismiss();
+                    if (after != null) after.run();
+                }
+            });
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(56), dp(56));
+            lp.setMargins(dp(8), dp(8), dp(8), dp(8));
+            row.addView(sw, lp);
+        }
+        d.setContentView(box);
+        Window w = d.getWindow();
+        w.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+        d.show();
+    }
     private int dp(int v) {
         return (int) (v * getResources().getDisplayMetrics().density);
     }
@@ -2584,6 +2685,8 @@ public class MainActivity extends Activity {
             new String[] { "Clock only", "Home screen", "Whole launcher" },
             () -> { d.dismiss(); recreate(); });
         addSwitchRow(box, "Dark text on home (light wallpaper)", "darktext", () -> applyTextTone());
+        addTapRow(box, "Text colour", "Clock, date, weather, favourites",
+            () -> { d.dismiss(); showColorPicker("Text colour", "home_color", () -> applyTextTone()); });
         showSettingsSheet(d, box);
     }
 
@@ -2642,6 +2745,12 @@ public class MainActivity extends Activity {
         d.requestWindowFeature(Window.FEATURE_NO_TITLE);
         LinearLayout box = settingsBox("Date & Clock", d, true);
         addSwitchRow(box, "Stacked clock (hour over minute)", "stacked", () -> applyClockStyle());
+        addTapRow(box, "Clock style", "Digital and analog styles", () -> { d.dismiss(); showClockStyles(); });
+        addSeekRow(box, "Clock opacity", "clk_alpha", 0.15f, 1f, 1f, null);
+        addTapRow(box, "Analog clock: number colour", "Auto = follows text colour",
+            () -> { d.dismiss(); showColorPicker("Number colour", "clk_nums", () -> applyAnalogColors()); });
+        addTapRow(box, "Analog clock: hands colour", "Hour and minute hands",
+            () -> { d.dismiss(); showColorPicker("Hands colour", "clk_hands", () -> applyAnalogColors()); });
         addSwitchRow(box, "Show weather under the date", "weather", () -> {
             refreshInfo();
             refreshWeather(false);

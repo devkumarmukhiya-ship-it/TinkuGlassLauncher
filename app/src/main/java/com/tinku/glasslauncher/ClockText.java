@@ -28,6 +28,7 @@ public class ClockText extends View {
     private static final int L_TIGHT = 6;       // 0500 (no colon)
     private static final int L_GAP = 7;         // 05 00 (gap, no colon)
     private static final int L_BARS = 8;        // T H U cut in two, info line in the middle
+    private static final int L_ANALOG = 9;      // analog dial
     private static final int FILL = 0;
     private static final int STROKE = 1;
 
@@ -88,7 +89,9 @@ public class ClockText extends View {
         new S(L_TIGHT, "sans-serif-light", Typeface.NORMAL, 54, STROKE, 0f),
         new S(L_INLINE_PAD, "asset:Chewy-Regular.ttf", Typeface.NORMAL, 50, FILL, 0f),
         new S(L_SPLIT, "asset:FredokaOne-Regular.ttf", Typeface.NORMAL, 56, FILL, 0f),
-        new S(L_SPLIT, "asset:Lobster-Regular.ttf", Typeface.NORMAL, 56, FILL, 0f)
+        new S(L_SPLIT, "asset:Lobster-Regular.ttf", Typeface.NORMAL, 56, FILL, 0f),
+        new S(L_ANALOG, "sans-serif-medium", Typeface.NORMAL, 110, FILL, 0f),
+        new S(L_ANALOG, "sans-serif-light", Typeface.NORMAL, 110, STROKE, 0f)
     };
 
     public static final int COUNT = BASE.length * 2;
@@ -105,6 +108,8 @@ public class ClockText extends View {
     private boolean right = false;
     private boolean shadow = true;
     private int color = Color.WHITE;
+    private int handsColor = 0;
+    private int numsColor = 0;
 
     private String hStr = "";
     private String mStr = "";
@@ -141,6 +146,12 @@ public class ClockText extends View {
 
     public void setAlignRight(boolean r) {
         right = r;
+        invalidate();
+    }
+
+    public void setAnalogColors(int hands, int nums) {
+        handsColor = hands;
+        numsColor = nums;
         invalidate();
     }
 
@@ -282,6 +293,10 @@ public class ClockText extends View {
                 contentW = Math.max(p.measureText(dayUp), pSmall.measureText(infoUp));
                 contentH = lineH;
                 break;
+            case L_ANALOG:
+                contentW = dp(s.size);
+                contentH = dp(s.size);
+                break;
             case L_STACK:
                 contentW = Math.max(p.measureText(hStr), p.measureText(mStr));
                 contentH = lineH * 1.84f;
@@ -324,6 +339,75 @@ public class ClockText extends View {
         }
     }
 
+    private void drawAnalog(Canvas canvas, S s, float ox) {
+        float dia = dp(s.size);
+        float r = dia / 2f;
+        float cx = ox + r;
+        float cy = dp(3) + r;
+        int hc = handsColor != 0 ? handsColor : color;
+        int nc = numsColor != 0 ? numsColor : color;
+        boolean disk = style % 2 == 1;
+        boolean ticksOnly = s.mode == STROKE;
+        Paint q = new Paint(Paint.ANTI_ALIAS_FLAG);
+        if (disk) {
+            q.setStyle(Paint.Style.FILL);
+            q.setColor(shadow ? 0x44000000 : 0x33FFFFFF);
+            canvas.drawCircle(cx, cy, r, q);
+        }
+        q.setStyle(Paint.Style.STROKE);
+        q.setStrokeCap(Paint.Cap.ROUND);
+        if (shadow) q.setShadowLayer(dp(2), 0f, dp(1), 0x66000000);
+        for (int i = 0; i < 60; i++) {
+            boolean major = i % 5 == 0;
+            double a = Math.toRadians(i * 6);
+            float len = major ? r * (ticksOnly ? 0.16f : 0.10f) : r * 0.05f;
+            float r2 = r - dp(3);
+            float x1 = cx + (float) Math.sin(a) * r2;
+            float y1 = cy - (float) Math.cos(a) * r2;
+            float x2 = cx + (float) Math.sin(a) * (r2 - len);
+            float y2 = cy - (float) Math.cos(a) * (r2 - len);
+            q.setStrokeWidth(major ? dp(1.8f) : dp(1f));
+            q.setColor(major ? nc : ((nc & 0x00FFFFFF) | 0x88000000));
+            canvas.drawLine(x1, y1, x2, y2, q);
+        }
+        if (!ticksOnly) {
+            q.setStyle(Paint.Style.FILL);
+            q.setTypeface(faceFor(s));
+            q.setTextAlign(Paint.Align.CENTER);
+            q.setTextSize(r * 0.26f);
+            q.setColor(nc);
+            Paint.FontMetrics f2 = q.getFontMetrics();
+            for (int n = 1; n <= 12; n++) {
+                double a = Math.toRadians(n * 30);
+                float tx = cx + (float) Math.sin(a) * r * 0.70f;
+                float ty = cy - (float) Math.cos(a) * r * 0.70f - (f2.ascent + f2.descent) / 2f;
+                canvas.drawText(String.valueOf(n), tx, ty, q);
+            }
+        }
+        int hh = 0;
+        int mm = 0;
+        try {
+            hh = Integer.parseInt(hStr);
+            mm = Integer.parseInt(mStr);
+        } catch (Exception e) {
+            hh = 0;
+            mm = 0;
+        }
+        float hourA = (float) Math.toRadians(((hh % 12) + mm / 60f) * 30f);
+        float minA = (float) Math.toRadians(mm * 6f);
+        q.setTypeface(null);
+        q.setStyle(Paint.Style.STROKE);
+        q.setStrokeCap(Paint.Cap.ROUND);
+        q.setColor(hc);
+        q.setStrokeWidth(dp(3.6f));
+        canvas.drawLine(cx, cy, cx + (float) Math.sin(hourA) * r * 0.48f,
+            cy - (float) Math.cos(hourA) * r * 0.48f, q);
+        q.setStrokeWidth(dp(2.4f));
+        canvas.drawLine(cx, cy, cx + (float) Math.sin(minA) * r * 0.74f,
+            cy - (float) Math.cos(minA) * r * 0.74f, q);
+        q.setStyle(Paint.Style.FILL);
+        canvas.drawCircle(cx, cy, dp(3.6f), q);
+    }
     @Override
     protected void onDraw(Canvas canvas) {
         S s = BASE[style / 2];
@@ -360,6 +444,10 @@ public class ClockText extends View {
                 canvas.drawText(hStr, ox, base, p);
                 setPaint(1);
                 canvas.drawText(mStr, ox, base + lineH * 0.92f, p);
+                break;
+            }
+            case L_ANALOG: {
+                drawAnalog(canvas, s, ox);
                 break;
             }
             case L_TIGHT: {
