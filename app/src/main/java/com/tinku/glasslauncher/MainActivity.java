@@ -2906,18 +2906,28 @@ public class MainActivity extends Activity {
             startActivity(i);
         });
 
-        labels.add("Uninstall");
-        icons.add(android.R.drawable.ic_menu_delete);
-        actions.add(() -> {
-            Intent i = new Intent(Intent.ACTION_DELETE);
-            i.setData(Uri.parse("package:" + pkg));
-            startActivity(i);
-        });
+        final boolean sysApp = isSystemApp(info);
+        if (!sysApp) {
+            labels.add("Uninstall");
+            icons.add(android.R.drawable.ic_menu_delete);
+            actions.add(() -> {
+                Intent i = new Intent(Intent.ACTION_DELETE);
+                i.setData(Uri.parse("package:" + pkg));
+                startActivity(i);
+            });
+        }
 
         int[] ic = new int[icons.size()];
         for (int k = 0; k < ic.length; k++) ic[k] = icons.get(k);
-        showSheet(info.loadIcon(pm), labelOf(info),
+        showSheet(info.loadIcon(pm), sysApp ? labelOf(info) + " (System app)" : labelOf(info),
             labels.toArray(new String[0]), ic, actions.toArray(new Runnable[0]));
+    }
+
+    /** true for apps that came with the phone (cannot be uninstalled normally). */
+    private boolean isSystemApp(ResolveInfo info) {
+        int f = info.activityInfo.applicationInfo.flags;
+        return (f & (android.content.pm.ApplicationInfo.FLAG_SYSTEM
+            | android.content.pm.ApplicationInfo.FLAG_UPDATED_SYSTEM_APP)) != 0;
     }
 
     private void launchApp(ResolveInfo info) {
