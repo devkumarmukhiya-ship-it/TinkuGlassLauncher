@@ -263,6 +263,7 @@ public class MainActivity extends Activity {
         setupTinku();
         setupV30();
         setupV31();
+        setupV32();
         setupAlphabetTouch();
         buildAlphabetBar();
         applyClockStyle();
@@ -287,6 +288,7 @@ public class MainActivity extends Activity {
         applyFavPos();
         applyAppFont();
         applyV31();
+        applyMedia();
     }
 
     private void applyClockStyle() {
@@ -1253,8 +1255,9 @@ public class MainActivity extends Activity {
 
         box.addView(widgetRow("\u229E", "Add Custom Widget", "Next step ma aaucha", false, null,
             () -> Toast.makeText(this, "Add Custom Widget: next step ma", Toast.LENGTH_SHORT).show(), null), rowLp());
-        box.addView(widgetRow("\u25B7", "Show Media Widget", "While playing music (next step)", false, null,
-            () -> Toast.makeText(this, "Media Widget: next step ma", Toast.LENGTH_SHORT).show(), null), rowLp());
+        box.addView(widgetRow("\u25B7", "Show Media Widget", "Music play/pause (notification access chahincha)", true, "media",
+            () -> { if (!hasNotifAccess()) startActivity(new Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS")); },
+            () -> applyMedia()), rowLp());
 
         final int screenH = getResources().getDisplayMetrics().heightPixels;
         final int fullH = (int) (screenH * 0.92f);
@@ -3450,6 +3453,10 @@ public class MainActivity extends Activity {
 
     private void openDrawer() {
         if (isDrawerOpen()) return;
+        if (prefs.getBoolean("folders", false)) {
+            showFolders();
+            return;
+        }
         Window w = drawerDialog.getWindow();
         boolean blur = false;
         if (Build.VERSION.SDK_INT >= 31) {
@@ -3599,6 +3606,202 @@ public class MainActivity extends Activity {
         return "Good Evening";
     }
 
+    // ===== Step 32: music widget (play/pause) =====
+    private LinearLayout mediaBox;
+    private TextView mediaTitle;
+    private TextView mediaArtist;
+    private TextView mediaPlay;
+    private android.media.session.MediaController activeMedia;
+    private final android.media.session.MediaController.Callback mediaCb =
+        new android.media.session.MediaController.Callback() {
+            @Override
+            public void onMetadataChanged(android.media.MediaMetadata m) {
+                updateMedia();
+            }
+
+            @Override
+            public void onPlaybackStateChanged(android.media.session.PlaybackState s) {
+                updateMedia();
+            }
+        };
+
+    private void setupV32() {
+        mediaBox = new LinearLayout(this);
+        mediaBox.setOrientation(LinearLayout.VERTICAL);
+        mediaBox.setPadding(dp(14), dp(10), dp(14), dp(10));
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(0x33000000);
+        bg.setCornerRadius(dp(18));
+        mediaBox.setBackground(bg);
+
+        mediaTitle = new TextView(this);
+        mediaTitle.setTextColor(0xFFFFFFFF);
+        mediaTitle.setTextSize(15);
+        mediaTitle.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
+        mediaTitle.setSingleLine(true);
+        mediaBox.addView(mediaTitle);
+
+        mediaArtist = new TextView(this);
+        mediaArtist.setTextColor(0xCCFFFFFF);
+        mediaArtist.setTextSize(12);
+        mediaArtist.setSingleLine(true);
+        mediaBox.addView(mediaArtist);
+
+        mediaPlay = new TextView(this);
+        mediaPlay.setTextColor(0xFFFFFFFF);
+        mediaPlay.setTextSize(20);
+        mediaPlay.setPadding(0, dp(4), 0, 0);
+        mediaBox.addView(mediaPlay);
+
+        mediaBox.setOnClickListener(v -> toggleMediaPlay());
+        FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(
+            dp(210), ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.TOP | Gravity.RIGHT);
+        lp.setMargins(0, dp(120), dp(16), 0);
+        rootFrame.addView(mediaBox, lp);
+        applyMedia();
+    }
+
+    private boolean hasNotifAccess() {
+        String flat = android.provider.Settings.Secure.getString(
+            getContentResolver(), "enabled_notification_listeners");
+        return flat != null && flat.contains(getPackageName());
+    }
+
+    private void applyMedia() {
+        if (mediaBox == null) return;
+        boolean on = prefs.getBoolean("media", false) && hasNotifAccess();
+        mediaBox.setVisibility(on ? View.VISIBLE : View.GONE);
+        if (activeMedia != null) {
+            activeMedia.unregisterCallback(mediaCb);
+            activeMedia = null;
+        }
+        if (!on) return;
+        try {
+            android.media.session.MediaSessionManager msm =
+                (android.media.session.MediaSessionManager) getSystemService(Context.MEDIA_SESSION_SERVICE);
+            List<android.media.session.MediaController> list = msm.getActiveSessions(
+                new android.content.ComponentName(this, MediaNotifService.class));
+            if (list != null && !list.isEmpty()) {
+                activeMedia = list.get(0);
+                activeMedia.registerCallback(mediaCb);
+            }
+        } catch (SecurityException e) {
+            activeMedia = null;
+        }
+        updateMedia();
+    }
+
+    private void updateMedia() {
+        if (mediaTitle == null) return;
+        if (activeMedia == null) {
+            mediaTitle.setText("Music chhaina");
+            mediaArtist.setText("");
+            mediaPlay.setText("▶");
+            return;
+        }
+        android.media.MediaMetadata m = activeMedia.getMetadata();
+        CharSequence t = m == null ? null : m.getText(android.media.MediaMetadata.METADATA_KEY_TITLE);
+        CharSequence a = m == null ? null : m.getText(android.media.MediaMetadata.METADATA_KEY_ARTIST);
+        mediaTitle.setText(t != null ? t : "Music");
+        mediaArtist.setText(a != null ? a : "");
+        android.media.session.PlaybackState ps = activeMedia.getPlaybackState();
+        boolean playing = ps != null && ps.getState() == android.media.session.PlaybackState.STATE_PLAYING;
+        mediaPlay.setText(playing ? "❚❚" : "▶");
+    }
+
+    private void toggleMediaPlay() {
+        if (activeMedia == null) return;
+        android.media.session.PlaybackState ps = activeMedia.getPlaybackState();
+        boolean playing = ps != null && ps.getState() == android.media.session.PlaybackState.STATE_PLAYING;
+        if (playing) {
+            activeMedia.getTransportControls().pause();
+        } else {
+            activeMedia.getTransportControls().play();
+        }
+    }
+
+    // ===== Step 33: drawer folder grid (Social, Media, Settings...) =====
+    private String categoryName(ResolveInfo r) {
+        try {
+            android.content.pm.ApplicationInfo ai = pm.getApplicationInfo(r.activityInfo.packageName, 0);
+            if (Build.VERSION.SDK_INT >= 26) {
+                int c = ai.category;
+                if (c == android.content.pm.ApplicationInfo.CATEGORY_SOCIAL) return "Social";
+                if (c == android.content.pm.ApplicationInfo.CATEGORY_PRODUCTIVITY) return "Productivity";
+                if (c == android.content.pm.ApplicationInfo.CATEGORY_GAME) return "Games";
+                if (c == android.content.pm.ApplicationInfo.CATEGORY_AUDIO
+                    || c == android.content.pm.ApplicationInfo.CATEGORY_VIDEO
+                    || c == android.content.pm.ApplicationInfo.CATEGORY_IMAGE) return "Media";
+                if (c == android.content.pm.ApplicationInfo.CATEGORY_MAPS
+                    || c == android.content.pm.ApplicationInfo.CATEGORY_NEWS) return "Info";
+            }
+            if ((ai.flags & android.content.pm.ApplicationInfo.FLAG_SYSTEM) != 0) return "Settings";
+        } catch (Exception e) {
+            // package na bhetiyo
+        }
+        return "Other";
+    }
+
+    private void showFolders() {
+        final Dialog d = new Dialog(this, android.R.style.Theme_Translucent_NoTitleBar);
+        d.requestWindowFeature(Window.FEATURE_NO_TITLE);
+
+        ScrollView sv = new ScrollView(this);
+        sv.setBackgroundColor(0xE6000000);
+        sv.setOnClickListener(v -> d.dismiss());
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(dp(24), dp(56), dp(24), dp(40));
+
+        java.util.LinkedHashMap<String, List<ResolveInfo>> groups =
+            new java.util.LinkedHashMap<String, List<ResolveInfo>>();
+        for (ResolveInfo r : installedApps) {
+            String k = categoryName(r);
+            List<ResolveInfo> l = groups.get(k);
+            if (l == null) {
+                l = new ArrayList<ResolveInfo>();
+                groups.put(k, l);
+            }
+            l.add(r);
+        }
+
+        for (Map.Entry<String, List<ResolveInfo>> e : groups.entrySet()) {
+            TextView t = new TextView(this);
+            t.setText(e.getKey());
+            t.setTextColor(0xFFFFFFFF);
+            t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 22);
+            t.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
+            t.setPadding(0, dp(18), 0, dp(10));
+            box.addView(t);
+
+            LinearLayout row = null;
+            int i = 0;
+            for (final ResolveInfo r : e.getValue()) {
+                if (i % 4 == 0) {
+                    row = new LinearLayout(this);
+                    row.setOrientation(LinearLayout.HORIZONTAL);
+                    box.addView(row, new LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+                }
+                ImageView iv = new ImageView(this);
+                iv.setImageDrawable(r.loadIcon(pm));
+                iv.setPadding(dp(8), dp(8), dp(8), dp(8));
+                iv.setOnClickListener(v -> {
+                    d.dismiss();
+                    launchApp(r);
+                });
+                row.addView(iv, new LinearLayout.LayoutParams(0, dp(76), 1f));
+                i++;
+            }
+        }
+
+        sv.addView(box);
+        d.setContentView(sv);
+        Window fw = d.getWindow();
+        if (fw != null) fw.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
+        showD(d);
+    }
+
     // ===== Presets: ek click ma settings bundle apply =====
     private void showPresets() {
         final Dialog d = new Dialog(this);
@@ -3631,7 +3834,9 @@ public class MainActivity extends Activity {
               .putBoolean("darktext", false)
               .putBoolean("welcome", false)
               .putBoolean("greeting", false)
-              .putBoolean("searchbar", false);
+              .putBoolean("searchbar", false)
+              .putBoolean("media", false)
+              .putBoolean("folders", false);
         } else {
             ed.putBoolean("showtop", true)
               .putBoolean("showbottom", true)
@@ -3644,7 +3849,9 @@ public class MainActivity extends Activity {
               .putInt("home_color", "mono".equals(name) ? 0xFFFFFFFF : 0)
               .putBoolean("welcome", true)
               .putBoolean("greeting", true)
-              .putBoolean("searchbar", true);
+              .putBoolean("searchbar", true)
+              .putBoolean("media", true)
+              .putBoolean("folders", true);
         }
         // layout pani preset sanga: favourites vertical, sabai kura left
         ed.putString("favlayout", "minimal".equals(name) ? "free" : "vertical")
