@@ -3584,6 +3584,13 @@ public class MainActivity extends Activity {
         greetingView.setText(greetingText());
         greetingView.setVisibility(prefs.getBoolean("greeting", false) ? View.VISIBLE : View.GONE);
         searchBarView.setVisibility(prefs.getBoolean("searchbar", false) ? View.VISIBLE : View.GONE);
+        // greeting lamo bhayo bhane favourites tala sarne (overlap nahune)
+        clockBox.post(new Runnable() {
+            @Override
+            public void run() {
+                nudgeFavs();
+            }
+        });
     }
 
     private String greetingText() {
@@ -3635,6 +3642,7 @@ public class MainActivity extends Activity {
               .putBoolean("stacked", true)
               .putBoolean("darktext", false)
               .putString("glass", "dark")
+              .putInt("home_color", "mono".equals(name) ? 0xFFFFFFFF : 0)
               .putBoolean("welcome", true)
               .putBoolean("greeting", true)
               .putBoolean("searchbar", true);
