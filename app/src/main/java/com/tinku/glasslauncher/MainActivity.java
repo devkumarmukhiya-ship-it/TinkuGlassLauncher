@@ -2256,9 +2256,26 @@ public class MainActivity extends Activity {
 
     private void applyClockPos() {
         applyPos(clockBox, "cx", "cy", 0.06f, 0.55f);
+        rootFrame.post(new Runnable() {
+            @Override
+            public void run() {
+                applyFavPos();
+            }
+        });
     }
 
     private void applyFavPos() {
+        if ("grid".equals(prefs.getString("favlayout", "free"))) {
+            rootFrame.post(new Runnable() {
+                @Override
+                public void run() {
+                    if (clockBox.getWidth() == 0) return;
+                    favoritesBox.setX(clockBox.getX());
+                    favoritesBox.setY(clockBox.getY() + clockBox.getHeight() + dp(14));
+                }
+            });
+            return;
+        }
         applyPos(favoritesBox, "fx", "fy", 0.06f, 0.92f);
     }
 
@@ -2293,6 +2310,7 @@ public class MainActivity extends Activity {
             dragMode = false;
             dragTarget = null;
             Toast.makeText(this, "Position saved", Toast.LENGTH_SHORT).show();
+            applyFavPos();
             if (dragRefreshFav) {
                 dragRefreshFav = false;
                 refreshFavorites();
@@ -2586,6 +2604,14 @@ public class MainActivity extends Activity {
                 prefs.edit().putFloat("fy", fyv).apply();
                 applyFavPos();
             });
+        addChoiceRow(box, "Grid: columns (across)", "gridcols", "3",
+            new String[] { "2", "3" },
+            new String[] { "2", "3" },
+            () -> refreshFavorites());
+        addChoiceRow(box, "Grid: rows (down)", "gridrows", "3",
+            new String[] { "2", "3", "4" },
+            new String[] { "2", "3", "4" },
+            () -> refreshFavorites());
         addChoiceRow(box, "App list glass", "glass", "clear",
             new String[] { "clear", "light", "dark" },
             new String[] { "Clear", "Light", "Dark" },
@@ -2842,6 +2868,22 @@ public class MainActivity extends Activity {
         favoritesBox.setOrientation(LinearLayout.VERTICAL);
         LinearLayout gridRow = null;
         int gridCount = 0;
+        int gridCols = 3;
+        int gridRowsMax = 3;
+        try {
+            gridCols = Integer.parseInt(prefs.getString("gridcols", "3"));
+            gridRowsMax = Integer.parseInt(prefs.getString("gridrows", "3"));
+        } catch (Exception ignored) {
+        }
+        if (gridCols < 2) gridCols = 2;
+        if (gridCols > 3) gridCols = 3;
+        if (gridRowsMax < 2) gridRowsMax = 2;
+        if (gridRowsMax > 4) gridRowsMax = 4;
+        final int gridLimit = gridCols * gridRowsMax;
+        int rw = rootFrame.getWidth();
+        if (rw <= 0) rw = getResources().getDisplayMetrics().widthPixels;
+        final int cellW = Math.max(dp(56), ((int) (rw * 0.55f) - dp(16)) / gridCols);
+        final int iconPx = Math.min(dp(52), (int) (cellW * 0.52f));
         Set<String> favs = getFavorites();
         boolean left = isFavLeft();
         for (int i = 0; i < installedApps.size(); i++) {
@@ -2852,7 +2894,8 @@ public class MainActivity extends Activity {
             final LinearLayout row = new LinearLayout(this);
             ImageView iv = new ImageView(this);
             iv.setImageDrawable(AppAdapter.iconOf(this, info));
-            LinearLayout.LayoutParams ilp = new LinearLayout.LayoutParams(dp(38), dp(38));
+            int isz = horiz ? iconPx : dp(38);
+            LinearLayout.LayoutParams ilp = new LinearLayout.LayoutParams(isz, isz);
 
             TextView tv = new TextView(this);
             tv.setText(labelOf(info));
@@ -2864,9 +2907,9 @@ public class MainActivity extends Activity {
             if (horiz) {
                 row.setOrientation(LinearLayout.VERTICAL);
                 row.setGravity(Gravity.CENTER_HORIZONTAL);
-                row.setPadding(dp(6), dp(8), dp(6), dp(8));
-                tv.setTextSize(12);
-                tv.setMaxWidth(dp(64));
+                row.setPadding(dp(2), dp(8), dp(2), dp(8));
+                tv.setTextSize(11);
+                tv.setMaxWidth(cellW - dp(4));
                 tv.setGravity(Gravity.CENTER);
                 tv.setPadding(0, dp(4), 0, 0);
                 tv.setTextColor(homeTextColor());
@@ -2909,14 +2952,15 @@ public class MainActivity extends Activity {
             if (!line && hasFavPos(pkg)) {
                 addFloatingFav(row, pkg);
             } else if (horiz) {
-                if (gridRow == null || gridCount % 4 == 0) {
+                if (gridCount >= gridLimit) continue;
+                if (gridRow == null || gridCount % gridCols == 0) {
                     gridRow = new LinearLayout(this);
                     gridRow.setOrientation(LinearLayout.HORIZONTAL);
                     favoritesBox.addView(gridRow, new LinearLayout.LayoutParams(
                         LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT));
                 }
                 gridRow.addView(row, new LinearLayout.LayoutParams(
-                    dp(76), LinearLayout.LayoutParams.WRAP_CONTENT));
+                    cellW, LinearLayout.LayoutParams.WRAP_CONTENT));
                 gridCount++;
             } else {
                 favoritesBox.addView(row, new LinearLayout.LayoutParams(
