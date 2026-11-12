@@ -262,6 +262,7 @@ public class MainActivity extends Activity {
         setupGestures();
         setupTinku();
         setupV30();
+        setupV31();
         setupAlphabetTouch();
         buildAlphabetBar();
         applyClockStyle();
@@ -285,6 +286,7 @@ public class MainActivity extends Activity {
         applyClockPos();
         applyFavPos();
         applyAppFont();
+        applyV31();
     }
 
     private void applyClockStyle() {
@@ -3531,6 +3533,66 @@ public class MainActivity extends Activity {
         }
     }
 
+    // ===== Step 31: WELCOME header, greeting, bottom "Search Now" bar =====
+    private TextView welcomeView;
+    private TextView greetingView;
+    private TextView searchBarView;
+
+    private void setupV31() {
+        welcomeView = new TextView(this);
+        welcomeView.setText("WELCOME");
+        welcomeView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 34);
+        welcomeView.setTypeface(Typeface.create("sans-serif-black", Typeface.BOLD));
+        welcomeView.setTextColor(0xFFFFFFFF);
+        welcomeView.setShadowLayer(8f, 0f, 2f, 0x66000000);
+        welcomeView.setPadding(dp(2), 0, dp(2), dp(6));
+        clockBox.addView(welcomeView, 0, new LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        greetingView = new TextView(this);
+        greetingView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 22);
+        greetingView.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
+        greetingView.setTextColor(0xFFFFFFFF);
+        greetingView.setShadowLayer(8f, 0f, 2f, 0x66000000);
+        greetingView.setPadding(dp(2), dp(8), dp(2), 0);
+        int gi = clockText != null ? clockBox.indexOfChild(clockText) + 1 : clockBox.getChildCount();
+        clockBox.addView(greetingView, gi, new LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        searchBarView = new TextView(this);
+        searchBarView.setText("Search Now");
+        searchBarView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
+        searchBarView.setTextColor(0xFF111111);
+        searchBarView.setGravity(Gravity.CENTER_VERTICAL);
+        searchBarView.setPadding(dp(22), 0, dp(22), 0);
+        GradientDrawable pill = new GradientDrawable();
+        pill.setColor(0xF2FFFFFF);
+        pill.setCornerRadius(dp(28));
+        searchBarView.setBackground(pill);
+        searchBarView.setOnClickListener(v -> showSearch());
+        FrameLayout.LayoutParams slp = new FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, dp(56), Gravity.BOTTOM);
+        slp.setMargins(dp(20), 0, dp(20), dp(24));
+        rootFrame.addView(searchBarView, slp);
+
+        applyV31();
+    }
+
+    private void applyV31() {
+        if (welcomeView == null) return;
+        welcomeView.setVisibility(prefs.getBoolean("welcome", false) ? View.VISIBLE : View.GONE);
+        greetingView.setText(greetingText());
+        greetingView.setVisibility(prefs.getBoolean("greeting", false) ? View.VISIBLE : View.GONE);
+        searchBarView.setVisibility(prefs.getBoolean("searchbar", false) ? View.VISIBLE : View.GONE);
+    }
+
+    private String greetingText() {
+        int h = new java.util.GregorianCalendar().get(java.util.Calendar.HOUR_OF_DAY);
+        if (h < 12) return "Good Morning";
+        if (h < 17) return "Good Afternoon";
+        return "Good Evening";
+    }
+
     // ===== Presets: ek click ma settings bundle apply =====
     private void showPresets() {
         final Dialog d = new Dialog(this);
@@ -3560,7 +3622,10 @@ public class MainActivity extends Activity {
               .putBoolean("showbat", false)
               .putBoolean("events", false)
               .putBoolean("stacked", false)
-              .putBoolean("darktext", false);
+              .putBoolean("darktext", false)
+              .putBoolean("welcome", false)
+              .putBoolean("greeting", false)
+              .putBoolean("searchbar", false);
         } else {
             ed.putBoolean("showtop", true)
               .putBoolean("showbottom", true)
@@ -3569,7 +3634,10 @@ public class MainActivity extends Activity {
               .putBoolean("events", "full".equals(name))
               .putBoolean("stacked", true)
               .putBoolean("darktext", false)
-              .putString("glass", "dark");
+              .putString("glass", "dark")
+              .putBoolean("welcome", true)
+              .putBoolean("greeting", true)
+              .putBoolean("searchbar", true);
         }
         ed.apply();
 
