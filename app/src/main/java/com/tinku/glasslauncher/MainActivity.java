@@ -1225,6 +1225,8 @@ public class MainActivity extends Activity {
 
         box.addView(widgetRow("\u25F7", "Clock style", null, true, null,
             () -> { d.dismiss(); showClockStyles(); }, null), rowLp());
+        box.addView(widgetRow("\u25A3", "Presets", "Monochrome, Minimal, Full", true, null,
+            () -> { d.dismiss(); showPresets(); }, null), rowLp());
         box.addView(widgetRow("\u25A6", "Calendar", "Show upcoming events, Show date", true, null,
             () -> { d.dismiss(); showCalendarDialog(); }, null), rowLp());
         box.addView(widgetRow("\u2600\uFE0E", "Weather", "Location, Temperature units", true, "weather",
@@ -3527,5 +3529,55 @@ public class MainActivity extends Activity {
         } else if (isDrawerOpen()) {
             hideOverlay();
         }
+    }
+
+    // ===== Presets: ek click ma settings bundle apply =====
+    private void showPresets() {
+        final Dialog d = new Dialog(this);
+        d.requestWindowFeature(Window.FEATURE_NO_TITLE);
+        LinearLayout box = sheetBox("Presets");
+        addTapRow(box, "Monochrome", "Welcome, weather, battery, dark glass", () -> {
+            d.dismiss();
+            applyPreset("mono");
+        });
+        addTapRow(box, "Minimal", "Ekdam saaf, kunai info nadekhine", () -> {
+            d.dismiss();
+            applyPreset("minimal");
+        });
+        addTapRow(box, "Full", "Sabai info, calendar sahit", () -> {
+            d.dismiss();
+            applyPreset("full");
+        });
+        showBottom(d, box);
+    }
+
+    private void applyPreset(String name) {
+        SharedPreferences.Editor ed = prefs.edit();
+        if ("minimal".equals(name)) {
+            ed.putBoolean("showtop", false)
+              .putBoolean("showbottom", false)
+              .putBoolean("weather", false)
+              .putBoolean("showbat", false)
+              .putBoolean("events", false)
+              .putBoolean("stacked", false)
+              .putBoolean("darktext", false);
+        } else {
+            ed.putBoolean("showtop", true)
+              .putBoolean("showbottom", true)
+              .putBoolean("weather", true)
+              .putBoolean("showbat", true)
+              .putBoolean("events", "full".equals(name))
+              .putBoolean("stacked", true)
+              .putBoolean("darktext", false)
+              .putString("glass", "dark");
+        }
+        ed.apply();
+
+        if (prefs.getBoolean("weather", false)) refreshWeather(true);
+        if (prefs.getBoolean("events", false)) ensureCalendarPermission();
+        applyClockStyle();
+        applyTextTone();
+        applyClockStyleV13();
+        refreshInfoV12();
     }
 }
