@@ -52,28 +52,30 @@ public class ClockText extends View {
         new S(L_INLINE, "sans-serif-light", Typeface.NORMAL, 46, FILL, 0f),
         new S(L_INLINE, "sans-serif-thin", Typeface.NORMAL, 50, FILL, 0f),
         new S(L_INLINE, "sans-serif", Typeface.NORMAL, 44, FILL, 0f),
-        new S(L_INLINE, "casual", Typeface.NORMAL, 46, FILL, 0f),
-        new S(L_INLINE, "sans-serif-medium", Typeface.BOLD_ITALIC, 44, FILL, 0f),
-        new S(L_INLINE, "cursive", Typeface.NORMAL, 50, FILL, 0f),
+        new S(L_INLINE, "asset:FredokaOne-Regular.ttf", Typeface.NORMAL, 46, FILL, 0f),
+        new S(L_INLINE, "asset:Lobster-Regular.ttf", Typeface.NORMAL, 46, FILL, 0f),
+        new S(L_INLINE, "asset:ShadowsIntoLight.ttf", Typeface.NORMAL, 52, FILL, 0f),
         new S(L_INLINE, "sans-serif-light", Typeface.ITALIC, 46, FILL, 0f),
-        new S(L_INLINE, "sans-serif-condensed", Typeface.BOLD, 50, FILL, 0f),
-        new S(L_INLINE, "monospace", Typeface.BOLD, 40, FILL, 0.05f),
+        new S(L_INLINE, "asset:BebasNeue-Regular.ttf", Typeface.NORMAL, 54, FILL, 0f),
+        new S(L_INLINE, "asset:PressStart2P-Regular.ttf", Typeface.NORMAL, 30, FILL, 0.05f),
         new S(L_INLINE, "sans-serif-black", Typeface.NORMAL, 46, STROKE, 0f),
         new S(L_SPLIT, "sans-serif-black", Typeface.NORMAL, 56, FILL, 0f),
         new S(L_SPLIT, "sans-serif-medium", Typeface.NORMAL, 56, FILL, 0f),
         new S(L_SPLIT, "serif", Typeface.BOLD, 56, FILL, 0f),
-        new S(L_INLINE_PAD, "cursive", Typeface.NORMAL, 50, FILL, 0f),
+        new S(L_INLINE_PAD, "asset:Chango-Regular.ttf", Typeface.NORMAL, 44, FILL, 0f),
         new S(L_INLINE_PAD, "sans-serif-condensed", Typeface.NORMAL, 54, FILL, 0f),
         new S(L_STACK, "sans-serif-light", Typeface.NORMAL, 54, FILL, 0f),
         new S(L_STACK, "sans-serif-condensed", Typeface.BOLD, 54, FILL, 0f),
         new S(L_STACK, "sans-serif-black", Typeface.NORMAL, 52, FILL, 0f),
         new S(L_STACK, "sans-serif-thin", Typeface.NORMAL, 56, FILL, 0f),
         new S(L_STACK, "sans-serif-medium", Typeface.NORMAL, 54, STROKE, 0f),
-        new S(L_DAY, "cursive", Typeface.NORMAL, 60, FILL, 0f),
-        new S(L_DAY, "sans-serif-black", Typeface.NORMAL, 54, FILL, 0f),
+        new S(L_DAY, "asset:Sacramento-Regular.ttf", Typeface.NORMAL, 66, FILL, 0f),
+        new S(L_DAY, "asset:ArchivoBlack-Regular.ttf", Typeface.NORMAL, 54, FILL, 0f),
         new S(L_INLINE_PAD, "serif", Typeface.NORMAL, 48, FILL, 0f),
         new S(L_SPLIT, "sans-serif-light", Typeface.NORMAL, 58, STROKE, 0f),
-        new S(L_DAY, "sans-serif-condensed", Typeface.BOLD, 60, FILL, 0f)
+        new S(L_DAY, "sans-serif-condensed", Typeface.BOLD, 60, FILL, 0f),
+        new S(L_INLINE, "asset:Monoton-Regular.ttf", Typeface.NORMAL, 40, FILL, 0f),
+        new S(L_DAY, "asset:Mansalva-Regular.ttf", Typeface.NORMAL, 62, FILL, 0f)
     };
 
     public static final int COUNT = BASE.length * 2;
@@ -156,6 +158,26 @@ public class ClockText extends View {
         super.onDetachedFromWindow();
     }
 
+    private static final java.util.HashMap<String, Typeface> FACES = new java.util.HashMap<String, Typeface>();
+
+    /** Font from assets/fonts when the name starts with "asset:", else a system font. Falls back safely. */
+    private Typeface faceFor(S s) {
+        if (s.font.startsWith("asset:")) {
+            String name = s.font.substring(6);
+            Typeface t = FACES.get(name);
+            if (t == null) {
+                try {
+                    t = Typeface.createFromAsset(getContext().getAssets(), "fonts/" + name);
+                } catch (Throwable e) {
+                    t = Typeface.create("sans-serif-medium", Typeface.NORMAL);
+                }
+                FACES.put(name, t);
+            }
+            return t;
+        }
+        return Typeface.create(s.font, s.face);
+    }
+
     private float sp(float v) {
         return TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, v, getResources().getDisplayMetrics());
     }
@@ -202,7 +224,7 @@ public class ClockText extends View {
         mStr = two(m);
 
         float f = sample ? 0.85f : 1f;
-        p.setTypeface(Typeface.create(s.font, s.face));
+        p.setTypeface(faceFor(s));
         p.setTextSize(sp(s.size * f));
         p.setLetterSpacing(s.spacing);
         pSmall.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
