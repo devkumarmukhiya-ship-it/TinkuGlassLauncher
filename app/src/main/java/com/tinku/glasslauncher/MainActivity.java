@@ -1227,8 +1227,6 @@ public class MainActivity extends Activity {
 
         box.addView(widgetRow("\u25F7", "Clock style", null, true, null,
             () -> { d.dismiss(); showClockStyles(); }, null), rowLp());
-        box.addView(widgetRow("\u25A3", "Presets", "Monochrome, Minimal, Full", true, null,
-            () -> { d.dismiss(); showPresets(); }, null), rowLp());
         box.addView(widgetRow("\u25A6", "Calendar", "Show upcoming events, Show date", true, null,
             () -> { d.dismiss(); showCalendarDialog(); }, null), rowLp());
         box.addView(widgetRow("\u2600\uFE0E", "Weather", "Location, Temperature units", true, "weather",
@@ -2735,6 +2733,7 @@ public class MainActivity extends Activity {
         final Dialog d = new Dialog(this);
         d.requestWindowFeature(Window.FEATURE_NO_TITLE);
         LinearLayout box = settingsBox("Theme", d, true);
+        addTapRow(box, "Presets", "Monochrome, Minimal, Full", () -> { d.dismiss(); showPresets(); });
         addSwitchRow(box, "Monochrome icons", "mono", () -> refreshAll());
         addTapRow(box, "Font style", FontKit.label(this), () -> { d.dismiss(); showFontPicker(); });
         addChoiceRow(box, "Apply font to", "fontscope", "clock",
