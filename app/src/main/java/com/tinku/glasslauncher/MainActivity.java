@@ -2454,10 +2454,8 @@ public class MainActivity extends Activity {
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
     }
 
-    private void showSettings() {
-        final Dialog d = new Dialog(this);
-        d.requestWindowFeature(Window.FEATURE_NO_TITLE);
-
+    // ---------- settings: main list of groups, each group opens its own sheet ----------
+    private LinearLayout settingsBox(String title, final Dialog d, boolean back) {
         LinearLayout box = new LinearLayout(this);
         box.setOrientation(LinearLayout.VERTICAL);
         box.setPadding(dp(24), dp(20), dp(24), dp(28));
@@ -2466,23 +2464,115 @@ public class MainActivity extends Activity {
         float r = dp(28);
         bg.setCornerRadii(new float[] { r, r, r, r, 0, 0, 0, 0 });
         box.setBackground(bg);
-
         TextView ht = new TextView(this);
-        ht.setText("Settings");
+        ht.setText(back ? "\u2039  " + title : title);
         ht.setTextColor(0xFF111111);
         ht.setTextSize(24);
-        ht.setPadding(0, 0, 0, dp(8));
+        ht.setPadding(0, 0, 0, dp(12));
+        if (back) {
+            ht.setOnClickListener(v -> {
+                d.dismiss();
+                showSettings();
+            });
+        }
         box.addView(ht);
+        return box;
+    }
 
+    private void showSettingsSheet(Dialog d, LinearLayout box) {
+        ScrollView sv = new ScrollView(this);
+        sv.addView(box);
+        d.setContentView(sv);
+        Window w = d.getWindow();
+        w.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+        w.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        w.setGravity(Gravity.BOTTOM);
+        showD(d);
+    }
+
+    private void addSettingsCard(LinearLayout box, String icon, String title, String sub, final Runnable r) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(dp(16), dp(14), dp(16), dp(14));
+        GradientDrawable g = new GradientDrawable();
+        g.setCornerRadius(dp(18));
+        g.setColor(0xFFFFFFFF);
+        row.setBackground(g);
+
+        TextView ic = new TextView(this);
+        ic.setText(icon);
+        ic.setTextSize(20);
+        ic.setGravity(Gravity.CENTER);
+        GradientDrawable cg = new GradientDrawable();
+        cg.setShape(GradientDrawable.OVAL);
+        cg.setColor(0xFF00796B);
+        ic.setBackground(cg);
+        row.addView(ic, new LinearLayout.LayoutParams(dp(44), dp(44)));
+
+        LinearLayout tx = new LinearLayout(this);
+        tx.setOrientation(LinearLayout.VERTICAL);
+        tx.setPadding(dp(14), 0, dp(8), 0);
+        TextView t = new TextView(this);
+        t.setText(title);
+        t.setTextColor(0xFF111111);
+        t.setTextSize(18);
+        tx.addView(t);
+        TextView st = new TextView(this);
+        st.setText(sub);
+        st.setTextColor(0xFF666666);
+        st.setTextSize(13);
+        tx.addView(st);
+        row.addView(tx, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+
+        TextView ch = new TextView(this);
+        ch.setText("\u203A");
+        ch.setTextSize(26);
+        ch.setTextColor(0xFF888888);
+        row.addView(ch);
+
+        row.setOnClickListener(v -> r.run());
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.setMargins(0, dp(6), 0, dp(6));
+        box.addView(row, lp);
+    }
+
+    private void showSettings() {
+        final Dialog d = new Dialog(this);
+        d.requestWindowFeature(Window.FEATURE_NO_TITLE);
+        LinearLayout box = settingsBox("Settings", d, false);
+        addSettingsCard(box, "\uD83C\uDFA8", "Theme", "Icons, font style, text colour",
+            () -> { d.dismiss(); showThemeSettings(); });
+        addSettingsCard(box, "\uD83C\uDFE0", "Home screen layout", "Favourites, app list glass, gestures",
+            () -> { d.dismiss(); showLayoutSettings(); });
+        addSettingsCard(box, "\uD83D\uDD52", "Date & Clock", "Clock, weather, battery",
+            () -> { d.dismiss(); showDateClockSettings(); });
+        addSettingsCard(box, "\uD83D\uDD12", "Lock screen setup", "Timer, position, date, battery",
+            () -> { d.dismiss(); showLockSettings(); });
+        addSettingsCard(box, "\uD83C\uDF99", "Tinku voice assistant", "Listen for \"Tinku\", mic",
+            () -> { d.dismiss(); showVoiceSettings(); });
+        showSettingsSheet(d, box);
+    }
+
+    private void showThemeSettings() {
+        final Dialog d = new Dialog(this);
+        d.requestWindowFeature(Window.FEATURE_NO_TITLE);
+        LinearLayout box = settingsBox("Theme", d, true);
         addSwitchRow(box, "Monochrome icons", "mono", () -> refreshAll());
-        addSwitchRow(box, "Stacked clock (hour over minute)", "stacked", () -> applyClockStyle());
         addTapRow(box, "Font style", FontKit.label(this), () -> { d.dismiss(); showFontPicker(); });
         addChoiceRow(box, "Apply font to", "fontscope", "clock",
             new String[] { "clock", "home", "all" },
             new String[] { "Clock only", "Home screen", "Whole launcher" },
             () -> { d.dismiss(); recreate(); });
-        addTapRow(box, "Lock screen setup", "Timer, position, date, battery", () -> showLockSettings());
         addSwitchRow(box, "Dark text on home (light wallpaper)", "darktext", () -> applyTextTone());
+        showSettingsSheet(d, box);
+    }
+
+    private void showLayoutSettings() {
+        final Dialog d = new Dialog(this);
+        d.requestWindowFeature(Window.FEATURE_NO_TITLE);
+        LinearLayout box = settingsBox("Home screen layout", d, true);
         addChoiceRow(box, "Favourites layout", "favlayout", "free",
             new String[] { "free", "vertical", "grid" },
             new String[] { "Free", "Vertical line", "Grid" },
@@ -2504,6 +2594,28 @@ public class MainActivity extends Activity {
             new String[] { "soft", "medium", "strong" },
             new String[] { "Soft", "Medium", "Strong" },
             () -> {});
+        addSwitchRow(box, "Swipe gestures (down = notifications, up = search)", "gestures", () -> {});
+
+        boolean blurOk = false;
+        if (Build.VERSION.SDK_INT >= 31) {
+            WindowManager wmx = (WindowManager) getSystemService(Context.WINDOW_SERVICE);
+            blurOk = wmx != null && wmx.isCrossWindowBlurEnabled();
+        }
+        TextView blurInfo = new TextView(this);
+        blurInfo.setText("Blur on this phone: " + (blurOk ? "working" : "not available")
+            + " (Android " + Build.VERSION.RELEASE + ")");
+        blurInfo.setTextColor(0xFF555555);
+        blurInfo.setTextSize(14);
+        blurInfo.setPadding(0, dp(14), 0, 0);
+        box.addView(blurInfo);
+        showSettingsSheet(d, box);
+    }
+
+    private void showDateClockSettings() {
+        final Dialog d = new Dialog(this);
+        d.requestWindowFeature(Window.FEATURE_NO_TITLE);
+        LinearLayout box = settingsBox("Date & Clock", d, true);
+        addSwitchRow(box, "Stacked clock (hour over minute)", "stacked", () -> applyClockStyle());
         addSwitchRow(box, "Show weather under the date", "weather", () -> {
             refreshInfo();
             refreshWeather(false);
@@ -2530,31 +2642,16 @@ public class MainActivity extends Activity {
                 refreshWeather(true);
             });
         addSwitchRow(box, "Show battery % under the date", "showbat", () -> refreshInfo());
-        addSwitchRow(box, "Swipe gestures (down = notifications, up = search)", "gestures", () -> {});
+        showSettingsSheet(d, box);
+    }
+
+    private void showVoiceSettings() {
+        final Dialog d = new Dialog(this);
+        d.requestWindowFeature(Window.FEATURE_NO_TITLE);
+        LinearLayout box = settingsBox("Tinku voice assistant", d, true);
         addSwitchRow(box, "Listen for \"Tinku\" (mic ON only while launcher is open)", "tinkulisten",
             () -> tinkuApplyListen());
-
-        boolean blurOk = false;
-        if (Build.VERSION.SDK_INT >= 31) {
-            WindowManager wmx = (WindowManager) getSystemService(Context.WINDOW_SERVICE);
-            blurOk = wmx != null && wmx.isCrossWindowBlurEnabled();
-        }
-        TextView blurInfo = new TextView(this);
-        blurInfo.setText("Blur on this phone: " + (blurOk ? "working" : "not available")
-            + " (Android " + Build.VERSION.RELEASE + ")");
-        blurInfo.setTextColor(0xFF555555);
-        blurInfo.setTextSize(14);
-        blurInfo.setPadding(0, dp(14), 0, 0);
-        box.addView(blurInfo);
-
-        ScrollView sv = new ScrollView(this);
-        sv.addView(box);
-        d.setContentView(sv);
-        Window w = d.getWindow();
-        w.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
-        w.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        w.setGravity(Gravity.BOTTOM);
-        showD(d);
+        showSettingsSheet(d, box);
     }
 
     private void showHomeMenu() {
