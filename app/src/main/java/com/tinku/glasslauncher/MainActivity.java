@@ -264,6 +264,7 @@ public class MainActivity extends Activity {
         setupV30();
         setupV31();
         setupV32();
+        setupV34();
         setupAlphabetTouch();
         buildAlphabetBar();
         applyClockStyle();
@@ -428,6 +429,12 @@ public class MainActivity extends Activity {
             // already gone
         }
         pkgReceiver = null;
+        try {
+            if (chargeReceiver != null) unregisterReceiver(chargeReceiver);
+        } catch (Exception e) {
+            // already gone
+        }
+        chargeReceiver = null;
         try {
             if (screenReceiver != null) unregisterReceiver(screenReceiver);
         } catch (Exception e) {
@@ -1241,6 +1248,8 @@ public class MainActivity extends Activity {
             () -> { d.dismiss(); startDrag(clockBox, "cx", "cy"); }, null), rowLp());
         box.addView(widgetRow("\u25AE", "Show Battery Percentage", null, true, "showbat",
             null, () -> refreshInfoV12()), rowLp());
+        box.addView(widgetRow("\u26A1", "Charge voice alerts", "Charger lagda/hatda ra percent ma bolne", true, "charge_sound",
+            null, null), rowLp());
 
         View gap = new View(this);
         box.addView(gap, new LinearLayout.LayoutParams(1, dp(12)));
@@ -3802,6 +3811,90 @@ public class MainActivity extends Activity {
         showD(d);
     }
 
+    // ===== Step 34: charger/battery voice alerts (offline TTS) =====
+    private BroadcastReceiver chargeReceiver;
+    private boolean chargeAnn93, chargeAnn92, chargeAnn75, chargeAnn50, chargeAnnLow;
+    private boolean chargeFirstRun = true;
+
+    private void setupV34() {
+        chargeReceiver = new BroadcastReceiver() {
+            @Override
+            public void onReceive(Context context, Intent intent) {
+                String a = intent.getAction();
+                if (Intent.ACTION_POWER_CONNECTED.equals(a)) {
+                    chargeResetAnn();
+                    chargeSay("Charger connected, battery start charging");
+                } else if (Intent.ACTION_POWER_DISCONNECTED.equals(a)) {
+                    chargeResetAnn();
+                    chargeSay("Charger disconnected");
+                } else if (Intent.ACTION_BATTERY_CHANGED.equals(a)) {
+                    chargeCheck(intent);
+                }
+            }
+        };
+        IntentFilter f = new IntentFilter();
+        f.addAction(Intent.ACTION_POWER_CONNECTED);
+        f.addAction(Intent.ACTION_POWER_DISCONNECTED);
+        f.addAction(Intent.ACTION_BATTERY_CHANGED);
+        registerReceiver(chargeReceiver, f);
+    }
+
+    private void chargeResetAnn() {
+        chargeAnn93 = false;
+        chargeAnn92 = false;
+        chargeAnn75 = false;
+        chargeAnn50 = false;
+        chargeAnnLow = false;
+    }
+
+    private void chargeCheck(Intent b) {
+        int level = b.getIntExtra(BatteryManager.EXTRA_LEVEL, -1);
+        int scale = b.getIntExtra(BatteryManager.EXTRA_SCALE, 100);
+        if (level < 0 || scale <= 0) return;
+        int pct = level * 100 / scale;
+        int st = b.getIntExtra(BatteryManager.EXTRA_STATUS, -1);
+        boolean plugged = st == BatteryManager.BATTERY_STATUS_CHARGING
+            || st == BatteryManager.BATTERY_STATUS_FULL;
+
+        if (chargeFirstRun) {
+            // app khulda already-passed percent lai bolna chhaina, state matra set garne
+            chargeFirstRun = false;
+            chargeAnn93 = pct >= 93;
+            chargeAnn92 = pct >= 92;
+            chargeAnn75 = pct >= 75;
+            chargeAnn50 = pct >= 50;
+            chargeAnnLow = pct <= 20;
+            return;
+        }
+
+        if (plugged) {
+            if (pct >= 93 && !chargeAnn93) {
+                chargeAnn93 = true;
+                chargeAnn92 = true;
+                chargeSay(pct + " percent, please disconnect the charger");
+            } else if (pct >= 92 && !chargeAnn92) {
+                chargeAnn92 = true;
+                chargeSay(pct + " percent, please disconnect the charger");
+            } else if (pct >= 75 && !chargeAnn75) {
+                chargeAnn75 = true;
+                chargeSay("Battery charged 75 percent");
+            } else if (pct >= 50 && !chargeAnn50) {
+                chargeAnn50 = true;
+                chargeSay("Battery charged 50 percent");
+            }
+        } else {
+            if (pct <= 20 && !chargeAnnLow) {
+                chargeAnnLow = true;
+                chargeSay("Battery low, please connect the charger");
+            }
+        }
+    }
+
+    private void chargeSay(String text) {
+        if (!prefs.getBoolean("charge_sound", true)) return;
+        tinkuSpeakOut(text, false, null);
+    }
+
     // ===== Presets: ek click ma settings bundle apply =====
     private void showPresets() {
         final Dialog d = new Dialog(this);
@@ -3836,7 +3929,8 @@ public class MainActivity extends Activity {
               .putBoolean("greeting", false)
               .putBoolean("searchbar", false)
               .putBoolean("media", false)
-              .putBoolean("folders", false);
+              .putBoolean("folders", false)
+              .putBoolean("charge_sound", false);
         } else {
             ed.putBoolean("showtop", true)
               .putBoolean("showbottom", true)
@@ -3851,7 +3945,8 @@ public class MainActivity extends Activity {
               .putBoolean("greeting", true)
               .putBoolean("searchbar", true)
               .putBoolean("media", true)
-              .putBoolean("folders", true);
+              .putBoolean("folders", true)
+              .putBoolean("charge_sound", true);
         }
         // layout pani preset sanga: favourites vertical, sabai kura left
         ed.putString("favlayout", "minimal".equals(name) ? "free" : "vertical")
