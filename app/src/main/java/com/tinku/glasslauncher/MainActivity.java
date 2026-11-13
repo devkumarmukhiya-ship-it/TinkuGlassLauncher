@@ -697,9 +697,10 @@ public class MainActivity extends Activity {
         }).start();
     }
 
-    private void showCityDialog() {
+    private void showCityDialog(final Runnable parent) {
         final Dialog d = new Dialog(this);
         d.requestWindowFeature(Window.FEATURE_NO_TITLE);
+        backTo(d, parent);
 
         LinearLayout box = new LinearLayout(this);
         box.setOrientation(LinearLayout.VERTICAL);
@@ -747,6 +748,7 @@ public class MainActivity extends Activity {
             @Override
             public void onClick(View v) {
                 d.dismiss();
+                if (parent != null) parent.run();
             }
         });
         save.setOnClickListener(new View.OnClickListener() {
@@ -759,6 +761,7 @@ public class MainActivity extends Activity {
                     refreshWeather(true);
                 }
                 d.dismiss();
+                if (parent != null) parent.run();
             }
         });
 
@@ -1235,7 +1238,7 @@ public class MainActivity extends Activity {
         box.addView(title);
 
         box.addView(widgetRow("\u25F7", "Clock style", null, true, null,
-            () -> { d.dismiss(); showClockStyles(); }, null), rowLp());
+            () -> { d.dismiss(); showClockStyles(this::showWidgetSheet); }, null), rowLp());
         box.addView(widgetRow("\u25A6", "Calendar", "Show upcoming events, Show date", true, null,
             () -> { d.dismiss(); showCalendarDialog(); }, null), rowLp());
         box.addView(widgetRow("\u2600\uFE0E", "Weather", "Location, Temperature units", true, "weather",
@@ -1255,7 +1258,7 @@ public class MainActivity extends Activity {
         box.addView(widgetRow("\u2606", "Edit favourites", null, true, null,
             () -> { d.dismiss(); showFavMenu(); }, null), rowLp());
         box.addView(widgetRow("\u2699\uFE0E", "Tinku settings", "Lock screen, voice, glass and more", true, null,
-            () -> { d.dismiss(); showSettings(); }, null), rowLp());
+            () -> { d.dismiss(); showSettingsFrom(this::showWidgetSheet); }, null), rowLp());
 
         View gap2 = new View(this);
         box.addView(gap2, new LinearLayout.LayoutParams(1, dp(12)));
@@ -1409,6 +1412,7 @@ public class MainActivity extends Activity {
             ensureCalendarPermission();
             refreshInfoV12();
         });
+        backTo(d, this::showWidgetSheet);
         showBottom(d, box);
     }
 
@@ -1429,11 +1433,12 @@ public class MainActivity extends Activity {
                 refreshInfoV12();
             });
         TextView city = makeButton("Change location", 0xFFFFFFFF, 0xFF00695C);
-        city.setOnClickListener(v -> { d.dismiss(); showCityDialog(); });
+        city.setOnClickListener(v -> { d.dismiss(); showCityDialog(this::showWeatherDialog); });
         LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         clp.topMargin = dp(14);
         box.addView(city, clp);
+        backTo(d, this::showWidgetSheet);
         showBottom(d, box);
     }
 
@@ -1473,6 +1478,25 @@ public class MainActivity extends Activity {
     private void showD(Dialog d) {
         d.show();
         FontKit.apply(this, d.getWindow().getDecorView(), FontKit.ALL);
+    }
+
+    // ===== Back: ek step pachadi =====
+    // Android back thichda dialog band bhayera seedhai home ma janu satta, parent page kholne.
+    private Runnable settingsParent = null;
+
+    private void backTo(final Dialog d, final Runnable parent) {
+        if (parent == null) return;
+        d.setOnKeyListener(new DialogInterface.OnKeyListener() {
+            @Override
+            public boolean onKey(DialogInterface dl, int keyCode, KeyEvent ev) {
+                if (keyCode == KeyEvent.KEYCODE_BACK && ev.getAction() == KeyEvent.ACTION_UP) {
+                    dl.dismiss();
+                    parent.run();
+                    return true;
+                }
+                return false;
+            }
+        });
     }
 
     private void applyAppFont() {
@@ -1535,10 +1559,11 @@ public class MainActivity extends Activity {
         }
         sv.addView(col);
         d.setContentView(sv);
+        backTo(d, this::showThemeSettings);
         d.show();
     }
 
-    private void showClockStyles() {
+    private void showClockStyles(final Runnable parent) {
         final Dialog d = new Dialog(this, android.R.style.Theme_DeviceDefault_Light_NoActionBar);
         android.widget.ScrollView sv = new android.widget.ScrollView(this);
         sv.setBackgroundColor(0xFFEBEBEB);
@@ -1567,6 +1592,7 @@ public class MainActivity extends Activity {
         }
         sv.addView(col);
         d.setContentView(sv);
+        backTo(d, parent);
         showD(d);
         d.getWindow().setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
     }
@@ -1576,6 +1602,7 @@ public class MainActivity extends Activity {
         lockHandler.removeCallbacks(idleLockRun);
         final Dialog d = new Dialog(this, android.R.style.Theme_DeviceDefault_NoActionBar);
         d.setOnDismissListener(x -> scheduleIdleLock());
+        backTo(d, this::showSettings);
 
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
@@ -1979,6 +2006,7 @@ public class MainActivity extends Activity {
                 expandNotifications();
                 break;
             case TinkuBrain.SETTINGS:
+                settingsParent = null;
                 showSettings();
                 break;
             case TinkuBrain.LOCK:
@@ -2204,8 +2232,13 @@ public class MainActivity extends Activity {
 
     /** Colour chooser: first circle = Auto (follow the normal text colour). */
     private void showColorPicker(String title, final String key, final Runnable after) {
+        showColorPicker(title, key, after, null);
+    }
+
+    private void showColorPicker(String title, final String key, final Runnable after, final Runnable parent) {
         final Dialog d = new Dialog(this);
         d.requestWindowFeature(Window.FEATURE_NO_TITLE);
+        backTo(d, parent);
         LinearLayout box = new LinearLayout(this);
         box.setOrientation(LinearLayout.VERTICAL);
         box.setPadding(dp(16), dp(20), dp(16), dp(20));
@@ -2658,6 +2691,7 @@ public class MainActivity extends Activity {
                 d.dismiss();
                 showSettings();
             });
+            backTo(d, this::showSettings);
         }
         box.addView(ht);
         return box;
@@ -2722,10 +2756,16 @@ public class MainActivity extends Activity {
         box.addView(row, lp);
     }
 
+    private void showSettingsFrom(Runnable parent) {
+        settingsParent = parent;
+        showSettings();
+    }
+
     private void showSettings() {
         final Dialog d = new Dialog(this);
         d.requestWindowFeature(Window.FEATURE_NO_TITLE);
         LinearLayout box = settingsBox("Settings", d, false);
+        backTo(d, settingsParent);
         addSettingsCard(box, "\uD83C\uDFA8", "Theme", "Icons, font style, text colour",
             () -> { d.dismiss(); showThemeSettings(); });
         addSettingsCard(box, "\uD83C\uDFE0", "Home screen layout", "Favourites, app list glass, gestures",
@@ -2769,6 +2809,7 @@ public class MainActivity extends Activity {
             .setTitle("About this app")
             .setMessage(msg)
             .setPositiveButton("OK", null)
+            .setOnCancelListener(dl -> showSettings())
             .show();
     }
 
@@ -2785,7 +2826,7 @@ public class MainActivity extends Activity {
             () -> { d.dismiss(); recreate(); });
         addSwitchRow(box, "Dark text on home (light wallpaper)", "darktext", () -> applyTextTone());
         addTapRow(box, "Text colour", "Clock, date, weather, favourites",
-            () -> { d.dismiss(); showColorPicker("Text colour", "home_color", () -> applyTextTone()); });
+            () -> { d.dismiss(); showColorPicker("Text colour", "home_color", () -> applyTextTone(), this::showThemeSettings); });
         showSettingsSheet(d, box);
     }
 
@@ -2850,12 +2891,12 @@ public class MainActivity extends Activity {
         d.requestWindowFeature(Window.FEATURE_NO_TITLE);
         LinearLayout box = settingsBox("Date & Clock", d, true);
         addSwitchRow(box, "Stacked clock (hour over minute)", "stacked", () -> applyClockStyle());
-        addTapRow(box, "Clock style", "Digital and analog styles", () -> { d.dismiss(); showClockStyles(); });
+        addTapRow(box, "Clock style", "Digital and analog styles", () -> { d.dismiss(); showClockStyles(this::showDateClockSettings); });
         addSeekRow(box, "Clock opacity", "clk_alpha", 0.15f, 1f, 1f, null);
         addTapRow(box, "Analog clock: number colour", "Auto = follows text colour",
-            () -> { d.dismiss(); showColorPicker("Number colour", "clk_nums", () -> applyAnalogColors()); });
+            () -> { d.dismiss(); showColorPicker("Number colour", "clk_nums", () -> applyAnalogColors(), this::showDateClockSettings); });
         addTapRow(box, "Analog clock: hands colour", "Hour and minute hands",
-            () -> { d.dismiss(); showColorPicker("Hands colour", "clk_hands", () -> applyAnalogColors()); });
+            () -> { d.dismiss(); showColorPicker("Hands colour", "clk_hands", () -> applyAnalogColors(), this::showDateClockSettings); });
         addSwitchRow(box, "Show weather under the date", "weather", () -> {
             refreshInfo();
             refreshWeather(false);
@@ -2869,7 +2910,7 @@ public class MainActivity extends Activity {
             @Override
             public void onClick(View v) {
                 d.dismiss();
-                showCityDialog();
+                showCityDialog(MainActivity.this::showDateClockSettings);
             }
         });
         box.addView(cityRow);
@@ -4181,6 +4222,7 @@ public class MainActivity extends Activity {
             prefs.edit().remove("charge_rules").remove("msg_connect").remove("msg_disconnect").apply();
             chargeFired.clear();
         });
+        backTo(d, this::showVoiceSettings);
         showBottom(d, box);
     }
 
@@ -4194,6 +4236,7 @@ public class MainActivity extends Activity {
             .setPositiveButton("Save", (dl, w) -> prefs.edit().putString(key, et.getText().toString()).apply())
             .setNeutralButton("Silent", (dl, w) -> prefs.edit().putString(key, "").apply())
             .setNegativeButton("Cancel", null)
+            .setOnCancelListener(dl -> showChargeEditor())
             .show();
     }
 
@@ -4242,6 +4285,7 @@ public class MainActivity extends Activity {
                 saveChargeRules(rules);
             });
         }
+        b.setOnCancelListener(dl -> showChargeEditor());
         b.show();
     }
 
@@ -4262,6 +4306,7 @@ public class MainActivity extends Activity {
             d.dismiss();
             applyPreset("full");
         });
+        backTo(d, this::showThemeSettings);
         showBottom(d, box);
     }
 
