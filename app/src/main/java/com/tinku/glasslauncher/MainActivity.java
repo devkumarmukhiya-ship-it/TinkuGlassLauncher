@@ -1248,10 +1248,6 @@ public class MainActivity extends Activity {
             () -> { d.dismiss(); startDrag(clockBox, "cx", "cy"); }, null), rowLp());
         box.addView(widgetRow("\u25AE", "Show Battery Percentage", null, true, "showbat",
             null, () -> refreshInfoV12()), rowLp());
-        box.addView(widgetRow("\u26A1", "Charge voice alerts", "Charger lagda/hatda ra percent ma bolne", true, "charge_sound",
-            null, null), rowLp());
-        box.addView(widgetRow("\u270E", "Charge alert settings", "Kun percent ma k bolne, aafai set garnus", true, null,
-            () -> { d.dismiss(); showChargeEditor(); }, null), rowLp());
 
         View gap = new View(this);
         box.addView(gap, new LinearLayout.LayoutParams(1, dp(12)));
@@ -2797,6 +2793,21 @@ public class MainActivity extends Activity {
         final Dialog d = new Dialog(this);
         d.requestWindowFeature(Window.FEATURE_NO_TITLE);
         LinearLayout box = settingsBox("Home screen layout", d, true);
+        final String mPos = prefs.getString("media_pos", "top");
+        final String mSide = prefs.getString("media_side", "right");
+        addTapRow(box, "Music card jaga", "Abhi: " + mPos + " (tap garera badlaunus)", () -> {
+            String next = "top".equals(mPos) ? "middle" : ("middle".equals(mPos) ? "bottom" : "top");
+            prefs.edit().putString("media_pos", next).apply();
+            applyMediaPos();
+            d.dismiss();
+            showLayoutSettings();
+        });
+        addTapRow(box, "Music card side", "Abhi: " + mSide + " (tap garera badlaunus)", () -> {
+            prefs.edit().putString("media_side", "left".equals(mSide) ? "right" : "left").apply();
+            applyMediaPos();
+            d.dismiss();
+            showLayoutSettings();
+        });
         addChoiceRow(box, "Favourites layout", "favlayout", "free",
             new String[] { "free", "vertical", "grid" },
             new String[] { "Free", "Vertical line", "Grid" },
@@ -2889,6 +2900,11 @@ public class MainActivity extends Activity {
         LinearLayout box = settingsBox("Tinku voice assistant", d, true);
         addSwitchRow(box, "Listen for \"Tinku\" (mic ON only while launcher is open)", "tinkulisten",
             () -> tinkuApplyListen());
+        addSwitchRow(box, "Charge voice alerts (charger lagda/hatda ra percent ma bolne)", "charge_sound", () -> {});
+        addTapRow(box, "Charge alert settings", "Kun percent ma k bolne, message set garnus", () -> {
+            d.dismiss();
+            showChargeEditor();
+        });
         showSettingsSheet(d, box);
     }
 
@@ -3698,10 +3714,9 @@ public class MainActivity extends Activity {
         mediaBox.addView(mediaPlay);
 
         mediaBox.setOnClickListener(v -> toggleMediaPlay());
-        FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(
-            dp(210), ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.TOP | Gravity.RIGHT);
-        lp.setMargins(0, dp(120), dp(16), 0);
-        rootFrame.addView(mediaBox, lp);
+        rootFrame.addView(mediaBox, new FrameLayout.LayoutParams(
+            dp(210), ViewGroup.LayoutParams.WRAP_CONTENT));
+        applyMediaPos();
         applyMedia();
     }
 
@@ -3714,12 +3729,14 @@ public class MainActivity extends Activity {
     private void applyMedia() {
         if (mediaBox == null) return;
         boolean on = prefs.getBoolean("media", false) && hasNotifAccess();
-        mediaBox.setVisibility(on ? View.VISIBLE : View.GONE);
+        applyMediaPos();
+        if (!on) mediaBox.setVisibility(View.GONE);
         if (activeMedia != null) {
             activeMedia.unregisterCallback(mediaCb);
             activeMedia = null;
         }
         if (!on) return;
+        registerSessionListener();
         try {
             android.media.session.MediaSessionManager msm =
                 (android.media.session.MediaSessionManager) getSystemService(Context.MEDIA_SESSION_SERVICE);
@@ -3738,6 +3755,7 @@ public class MainActivity extends Activity {
     private void updateMedia() {
         if (mediaTitle == null) return;
         if (activeMedia == null) {
+            mediaBox.setVisibility(View.GONE);
             mediaTitle.setText("Music chhaina");
             mediaArtist.setText("");
             mediaPlay.setText("▶");
@@ -3750,7 +3768,49 @@ public class MainActivity extends Activity {
         mediaArtist.setText(a != null ? a : "");
         android.media.session.PlaybackState ps = activeMedia.getPlaybackState();
         boolean playing = ps != null && ps.getState() == android.media.session.PlaybackState.STATE_PLAYING;
+        // sirf music/video chalda matra dekhaune; roke pachhi aafai hide
+        mediaBox.setVisibility(playing && prefs.getBoolean("media", false) ? View.VISIBLE : View.GONE);
         mediaPlay.setText(playing ? "❚❚" : "▶");
+    }
+
+    private boolean mediaSessionListening = false;
+
+    /** Naya app ma music suru bhayo bhane pani aafai pakadcha */
+    private void registerSessionListener() {
+        if (mediaSessionListening) return;
+        try {
+            android.media.session.MediaSessionManager msm =
+                (android.media.session.MediaSessionManager) getSystemService(Context.MEDIA_SESSION_SERVICE);
+            msm.addOnActiveSessionsChangedListener(list -> applyMedia(),
+                new android.content.ComponentName(this, MediaNotifService.class));
+            mediaSessionListening = true;
+        } catch (SecurityException e) {
+            // notification access chhaina
+        }
+    }
+
+    /** Music card ko thau: top / middle / bottom ra left / right */
+    private void applyMediaPos() {
+        if (mediaBox == null) return;
+        String pos = prefs.getString("media_pos", "top");
+        String side = prefs.getString("media_side", "right");
+        int hg = "left".equals(side) ? Gravity.LEFT : Gravity.RIGHT;
+        int vg;
+        int top = 0;
+        int bottom = 0;
+        if ("middle".equals(pos)) {
+            vg = Gravity.CENTER_VERTICAL;
+        } else if ("bottom".equals(pos)) {
+            vg = Gravity.BOTTOM;
+            bottom = dp(110);
+        } else {
+            vg = Gravity.TOP;
+            top = dp(120);
+        }
+        FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(
+            dp(210), ViewGroup.LayoutParams.WRAP_CONTENT, vg | hg);
+        lp.setMargins(dp(16), top, dp(16), bottom);
+        mediaBox.setLayoutParams(lp);
     }
 
     private void toggleMediaPlay() {
