@@ -1250,6 +1250,8 @@ public class MainActivity extends Activity {
             null, () -> refreshInfoV12()), rowLp());
         box.addView(widgetRow("\u26A1", "Charge voice alerts", "Charger lagda/hatda ra percent ma bolne", true, "charge_sound",
             null, null), rowLp());
+        box.addView(widgetRow("\u270E", "Charge alert settings", "Kun percent ma k bolne, aafai set garnus", true, null,
+            () -> { d.dismiss(); showChargeEditor(); }, null), rowLp());
 
         View gap = new View(this);
         box.addView(gap, new LinearLayout.LayoutParams(1, dp(12)));
@@ -3811,9 +3813,19 @@ public class MainActivity extends Activity {
         showD(d);
     }
 
-    // ===== Step 34: charger/battery voice alerts (offline TTS) =====
+    // ===== Step 34: charger/battery voice alerts (customizable, offline TTS) =====
+    // Rule format: U|percent|message  (U = charging ma >=, D = charger nalagda <=)
+    // {p} = real-time battery percent
+    private static final String DEF_RULES =
+        "U|93|{p} percent, please disconnect the charger\n"
+        + "U|75|Battery charged {p} percent\n"
+        + "U|50|Battery charged {p} percent\n"
+        + "D|20|Battery low, please connect the charger";
+    private static final String DEF_CONNECT = "Battery {p} percent, charger connected, battery start charging";
+    private static final String DEF_DISCONNECT = "Charger disconnected, battery {p} percent";
+
     private BroadcastReceiver chargeReceiver;
-    private boolean chargeAnn93, chargeAnn92, chargeAnn75, chargeAnn50, chargeAnnLow;
+    private final HashSet<String> chargeFired = new HashSet<String>();
     private boolean chargeFirstRun = true;
 
     private void setupV34() {
@@ -3821,14 +3833,18 @@ public class MainActivity extends Activity {
             @Override
             public void onReceive(Context context, Intent intent) {
                 String a = intent.getAction();
-                if (Intent.ACTION_POWER_CONNECTED.equals(a)) {
-                    chargeResetAnn();
-                    chargeSay("Charger connected, battery start charging");
-                } else if (Intent.ACTION_POWER_DISCONNECTED.equals(a)) {
-                    chargeResetAnn();
-                    chargeSay("Charger disconnected");
-                } else if (Intent.ACTION_BATTERY_CHANGED.equals(a)) {
+                if (Intent.ACTION_BATTERY_CHANGED.equals(a)) {
                     chargeCheck(intent);
+                    return;
+                }
+                boolean plugged = Intent.ACTION_POWER_CONNECTED.equals(a);
+                int pct = chargePct();
+                chargeFired.clear();
+                chargePrime(pct, plugged);
+                if (plugged) {
+                    chargeSay(prefs.getString("msg_connect", DEF_CONNECT), pct);
+                } else {
+                    chargeSay(prefs.getString("msg_disconnect", DEF_DISCONNECT), pct);
                 }
             }
         };
@@ -3839,12 +3855,18 @@ public class MainActivity extends Activity {
         registerReceiver(chargeReceiver, f);
     }
 
-    private void chargeResetAnn() {
-        chargeAnn93 = false;
-        chargeAnn92 = false;
-        chargeAnn75 = false;
-        chargeAnn50 = false;
-        chargeAnnLow = false;
+    private int chargePct() {
+        Intent b = registerReceiver(null, new IntentFilter(Intent.ACTION_BATTERY_CHANGED));
+        if (b == null) return -1;
+        int level = b.getIntExtra(BatteryManager.EXTRA_LEVEL, -1);
+        int scale = b.getIntExtra(BatteryManager.EXTRA_SCALE, 100);
+        if (level < 0 || scale <= 0) return -1;
+        return level * 100 / scale;
+    }
+
+    private boolean chargePlugged(Intent b) {
+        int st = b.getIntExtra(BatteryManager.EXTRA_STATUS, -1);
+        return st == BatteryManager.BATTERY_STATUS_CHARGING || st == BatteryManager.BATTERY_STATUS_FULL;
     }
 
     private void chargeCheck(Intent b) {
@@ -3852,47 +3874,163 @@ public class MainActivity extends Activity {
         int scale = b.getIntExtra(BatteryManager.EXTRA_SCALE, 100);
         if (level < 0 || scale <= 0) return;
         int pct = level * 100 / scale;
-        int st = b.getIntExtra(BatteryManager.EXTRA_STATUS, -1);
-        boolean plugged = st == BatteryManager.BATTERY_STATUS_CHARGING
-            || st == BatteryManager.BATTERY_STATUS_FULL;
-
+        boolean plugged = chargePlugged(b);
         if (chargeFirstRun) {
-            // app khulda already-passed percent lai bolna chhaina, state matra set garne
             chargeFirstRun = false;
-            chargeAnn93 = pct >= 93;
-            chargeAnn92 = pct >= 92;
-            chargeAnn75 = pct >= 75;
-            chargeAnn50 = pct >= 50;
-            chargeAnnLow = pct <= 20;
+            chargePrime(pct, plugged);
             return;
         }
-
-        if (plugged) {
-            if (pct >= 93 && !chargeAnn93) {
-                chargeAnn93 = true;
-                chargeAnn92 = true;
-                chargeSay(pct + " percent, please disconnect the charger");
-            } else if (pct >= 92 && !chargeAnn92) {
-                chargeAnn92 = true;
-                chargeSay(pct + " percent, please disconnect the charger");
-            } else if (pct >= 75 && !chargeAnn75) {
-                chargeAnn75 = true;
-                chargeSay("Battery charged 75 percent");
-            } else if (pct >= 50 && !chargeAnn50) {
-                chargeAnn50 = true;
-                chargeSay("Battery charged 50 percent");
-            }
-        } else {
-            if (pct <= 20 && !chargeAnnLow) {
-                chargeAnnLow = true;
-                chargeSay("Battery low, please connect the charger");
+        for (String[] r : chargeRules()) {
+            String k = r[0] + "|" + r[1];
+            if (chargeFired.contains(k)) continue;
+            if (ruleHit(r, pct, plugged)) {
+                chargeFired.add(k);
+                chargeSay(r[2], pct);
+                break; // ek choti ek matra bolchha
             }
         }
     }
 
-    private void chargeSay(String text) {
+    /** Already-passed rules lai pre-mark garne, taki app khulda ya connect garda purano percent nabolos. */
+    private void chargePrime(int pct, boolean plugged) {
+        if (pct < 0) return;
+        for (String[] r : chargeRules()) {
+            if (ruleHit(r, pct, plugged)) chargeFired.add(r[0] + "|" + r[1]);
+        }
+    }
+
+    private boolean ruleHit(String[] r, int pct, boolean plugged) {
+        int p = Integer.parseInt(r[1]);
+        if ("U".equals(r[0])) return plugged && pct >= p;
+        return !plugged && pct <= p;
+    }
+
+    private void chargeSay(String tpl, int pct) {
         if (!prefs.getBoolean("charge_sound", true)) return;
+        if (tpl == null || tpl.trim().isEmpty()) return;
+        String text = tpl.replace("{p}", pct < 0 ? "?" : String.valueOf(pct));
         tinkuSpeakOut(text, false, null);
+    }
+
+    private List<String[]> chargeRules() {
+        String raw = prefs.getString("charge_rules", DEF_RULES);
+        List<String[]> out = new ArrayList<String[]>();
+        for (String line : raw.split("\n")) {
+            String[] p = line.split("\\|", 3);
+            if (p.length == 3 && p[1].trim().matches("\\d{1,3}")) {
+                out.add(new String[]{p[0].trim(), p[1].trim(), p[2]});
+            }
+        }
+        return out;
+    }
+
+    private void saveChargeRules(List<String[]> rules) {
+        StringBuilder sb = new StringBuilder();
+        for (String[] r : rules) {
+            sb.append(r[0]).append('|').append(r[1]).append('|').append(r[2].replace("\n", " ")).append('\n');
+        }
+        prefs.edit().putString("charge_rules", sb.toString()).apply();
+        chargeFired.clear();
+    }
+
+    /** Charge alert ko list + message editor (Tinku widget bata khulcha). */
+    private void showChargeEditor() {
+        final Dialog d = new Dialog(this);
+        d.requestWindowFeature(Window.FEATURE_NO_TITLE);
+        LinearLayout box = sheetBox("Charge alerts");
+
+        addTapRow(box, "Charger connected message",
+            prefs.getString("msg_connect", DEF_CONNECT), () -> {
+                d.dismiss();
+                showTextEditor("Charger connected message", "msg_connect", DEF_CONNECT);
+            });
+        addTapRow(box, "Charger disconnected message",
+            prefs.getString("msg_disconnect", DEF_DISCONNECT), () -> {
+                d.dismiss();
+                showTextEditor("Charger disconnected message", "msg_disconnect", DEF_DISCONNECT);
+            });
+
+        List<String[]> rules = chargeRules();
+        for (int i = 0; i < rules.size(); i++) {
+            final int idx = i;
+            String[] r = rules.get(i);
+            String title = ("D".equals(r[0]) ? "Low " : "Charging ") + r[1] + "%";
+            addTapRow(box, title, r[2], () -> {
+                d.dismiss();
+                showRuleEditor(idx);
+            });
+        }
+        addTapRow(box, "+ Naya alert", "Percent ra message aafai banaunus", () -> {
+            d.dismiss();
+            showRuleEditor(-1);
+        });
+        addTapRow(box, "Default ma farkaaunus", "Sabai alert ra message reset", () -> {
+            d.dismiss();
+            prefs.edit().remove("charge_rules").remove("msg_connect").remove("msg_disconnect").apply();
+            chargeFired.clear();
+        });
+        showBottom(d, box);
+    }
+
+    private void showTextEditor(String title, final String key, String def) {
+        final android.widget.EditText et = new android.widget.EditText(this);
+        et.setText(prefs.getString(key, def));
+        et.setHint("{p} = real battery percent");
+        new android.app.AlertDialog.Builder(this)
+            .setTitle(title)
+            .setView(et)
+            .setPositiveButton("Save", (dl, w) -> prefs.edit().putString(key, et.getText().toString()).apply())
+            .setNeutralButton("Silent", (dl, w) -> prefs.edit().putString(key, "").apply())
+            .setNegativeButton("Cancel", null)
+            .show();
+    }
+
+    private void showRuleEditor(final int idx) {
+        final List<String[]> rules = chargeRules();
+        final boolean isNew = idx < 0 || idx >= rules.size();
+        final String[] cur = isNew ? new String[]{"U", "80", "Battery {p} percent"} : rules.get(idx);
+
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(dp(20), dp(8), dp(20), 0);
+        final android.widget.EditText pct = new android.widget.EditText(this);
+        pct.setHint("Percent (jastai 80)");
+        pct.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
+        pct.setText(cur[1]);
+        final android.widget.CheckBox low = new android.widget.CheckBox(this);
+        low.setText("Low alert (charger nalagda bolne)");
+        low.setChecked("D".equals(cur[0]));
+        final android.widget.EditText msg = new android.widget.EditText(this);
+        msg.setHint("Message ({p} = real percent)");
+        msg.setText(cur[2]);
+        box.addView(pct);
+        box.addView(low);
+        box.addView(msg);
+
+        android.app.AlertDialog.Builder b = new android.app.AlertDialog.Builder(this)
+            .setTitle(isNew ? "Naya alert" : "Alert edit")
+            .setView(box)
+            .setPositiveButton("Save", (dl, w) -> {
+                String ps = pct.getText().toString().trim();
+                if (!ps.matches("\\d{1,3}")) return;
+                int pv = Integer.parseInt(ps);
+                if (pv < 1 || pv > 100) return;
+                String[] nr = new String[]{
+                    low.isChecked() ? "D" : "U",
+                    String.valueOf(pv),
+                    msg.getText().toString().replace("|", "/").trim()
+                };
+                if (isNew) rules.add(nr); else rules.set(idx, nr);
+                saveChargeRules(rules);
+            })
+            .setNegativeButton("Cancel", null);
+        if (!isNew) {
+            b.setNeutralButton("Delete", (dl, w) -> {
+                rules.remove(idx);
+                saveChargeRules(rules);
+            });
+        }
+        b.show();
     }
 
     // ===== Presets: ek click ma settings bundle apply =====
