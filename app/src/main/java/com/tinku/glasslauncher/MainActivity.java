@@ -2794,7 +2794,7 @@ public class MainActivity extends Activity {
         d.requestWindowFeature(Window.FEATURE_NO_TITLE);
         LinearLayout box = settingsBox("Home screen layout", d, true);
         addTapRow(box, "Music card reset", "Music card lai default jaga ma farkaaunus (abhi drag garera rakhna milchha)", () -> {
-            prefs.edit().remove("media_tx").remove("media_ty").apply();
+            prefs.edit().remove("media_tx").remove("media_ty").remove("media_w").remove("media_h").apply();
             applyMediaPos();
             d.dismiss();
             showLayoutSettings();
@@ -3657,12 +3657,20 @@ public class MainActivity extends Activity {
         return "Good Evening";
     }
 
-    // ===== Step 32: music widget (play/pause) =====
+    // ===== Step 32: music card (album art, naam, pause/resume, aagadi/pachhadi, size, drag) =====
     private LinearLayout mediaBox;
+    private ImageView mediaArt;
     private TextView mediaTitle;
     private TextView mediaArtist;
+    private TextView mediaPrev;
     private TextView mediaPlay;
+    private TextView mediaNext;
     private android.media.session.MediaController activeMedia;
+    private boolean mediaSessionListening = false;
+    private float mdX, mdY, mdTx, mdTy;
+    private int mdW, mdH;
+    private boolean mdMoved;
+
     private final android.media.session.MediaController.Callback mediaCb =
         new android.media.session.MediaController.Callback() {
             @Override
@@ -3676,75 +3684,162 @@ public class MainActivity extends Activity {
             }
         };
 
+    private TextView mediaBtn(String glyph) {
+        TextView t = new TextView(this);
+        t.setText(glyph);
+        t.setTextColor(0xFFFFFFFF);
+        t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18);
+        t.setGravity(Gravity.CENTER);
+        t.setPadding(dp(8), dp(4), dp(8), dp(4));
+        return t;
+    }
+
     private void setupV32() {
         mediaBox = new LinearLayout(this);
-        mediaBox.setOrientation(LinearLayout.VERTICAL);
-        mediaBox.setPadding(dp(14), dp(10), dp(14), dp(10));
+        mediaBox.setOrientation(LinearLayout.HORIZONTAL);
+        mediaBox.setGravity(Gravity.CENTER_VERTICAL);
+        mediaBox.setPadding(dp(10), dp(10), dp(10), dp(10));
         GradientDrawable bg = new GradientDrawable();
-        bg.setColor(0x33000000);
+        bg.setColor(0x66000000);
         bg.setCornerRadius(dp(18));
         mediaBox.setBackground(bg);
 
+        mediaArt = new ImageView(this);
+        mediaArt.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        mediaArt.setBackgroundColor(0x33FFFFFF);
+        mediaBox.addView(mediaArt, new LinearLayout.LayoutParams(dp(52), dp(52)));
+
+        LinearLayout col = new LinearLayout(this);
+        col.setOrientation(LinearLayout.VERTICAL);
+        col.setPadding(dp(10), 0, dp(4), 0);
+
         mediaTitle = new TextView(this);
         mediaTitle.setTextColor(0xFFFFFFFF);
-        mediaTitle.setTextSize(15);
+        mediaTitle.setTextSize(14);
         mediaTitle.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
         mediaTitle.setSingleLine(true);
-        mediaBox.addView(mediaTitle);
+        mediaTitle.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        col.addView(mediaTitle);
 
         mediaArtist = new TextView(this);
         mediaArtist.setTextColor(0xCCFFFFFF);
-        mediaArtist.setTextSize(12);
+        mediaArtist.setTextSize(11);
         mediaArtist.setSingleLine(true);
-        mediaBox.addView(mediaArtist);
+        mediaArtist.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        col.addView(mediaArtist);
 
-        mediaPlay = new TextView(this);
-        mediaPlay.setTextColor(0xFFFFFFFF);
-        mediaPlay.setTextSize(20);
-        mediaPlay.setPadding(0, dp(4), 0, 0);
-        mediaBox.addView(mediaPlay);
+        LinearLayout ctl = new LinearLayout(this);
+        ctl.setOrientation(LinearLayout.HORIZONTAL);
+        ctl.setGravity(Gravity.CENTER_VERTICAL);
+        mediaPrev = mediaBtn("⏮");
+        mediaPlay = mediaBtn("▶");
+        mediaNext = mediaBtn("⏭");
+        ctl.addView(mediaPrev);
+        ctl.addView(mediaPlay);
+        ctl.addView(mediaNext);
+        col.addView(ctl);
 
-        // Tanera jaha chahanu chha tyahaan rakhna milchha; saano tap = play/pause
-        mediaBox.setOnTouchListener((v, ev) -> {
+        // size badlaune handle: ↔ chaudai, ↕ waigo, ⤢ dono
+        LinearLayout size = new LinearLayout(this);
+        size.setOrientation(LinearLayout.HORIZONTAL);
+        TextView hR = mediaBtn("↔");
+        TextView hB = mediaBtn("↕");
+        TextView hC = mediaBtn("⤢");
+        hR.setOnTouchListener(resizeListener(1));
+        hB.setOnTouchListener(resizeListener(2));
+        hC.setOnTouchListener(resizeListener(3));
+        size.addView(hR);
+        size.addView(hB);
+        size.addView(hC);
+        col.addView(size);
+
+        mediaBox.addView(col, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+
+        mediaPlay.setOnClickListener(v -> toggleMediaPlay());
+        mediaPrev.setOnClickListener(v -> {
+            if (activeMedia != null) activeMedia.getTransportControls().skipToPrevious();
+        });
+        mediaNext.setOnClickListener(v -> {
+            if (activeMedia != null) activeMedia.getTransportControls().skipToNext();
+        });
+
+        // card ko body tanera jaga badlaune
+        mediaBox.setOnTouchListener(dragListener);
+        rootFrame.addView(mediaBox, new FrameLayout.LayoutParams(dp(270), ViewGroup.LayoutParams.WRAP_CONTENT));
+        applyMediaPos();
+        applyMedia();
+    }
+
+    private final View.OnTouchListener dragListener = (v, ev) -> {
+        switch (ev.getActionMasked()) {
+            case android.view.MotionEvent.ACTION_DOWN:
+                mdX = ev.getRawX();
+                mdY = ev.getRawY();
+                mdTx = v.getTranslationX();
+                mdTy = v.getTranslationY();
+                mdMoved = false;
+                return true;
+            case android.view.MotionEvent.ACTION_MOVE: {
+                float dx = ev.getRawX() - mdX;
+                float dy = ev.getRawY() - mdY;
+                if (!mdMoved && Math.abs(dx) + Math.abs(dy) < dp(8)) return true;
+                mdMoved = true;
+                float minX = -v.getLeft();
+                float maxX = rootFrame.getWidth() - v.getRight();
+                float minY = -v.getTop();
+                float maxY = rootFrame.getHeight() - v.getBottom();
+                v.setTranslationX(Math.max(minX, Math.min(maxX, mdTx + dx)));
+                v.setTranslationY(Math.max(minY, Math.min(maxY, mdTy + dy)));
+                return true;
+            }
+            case android.view.MotionEvent.ACTION_UP:
+                if (mdMoved) {
+                    prefs.edit().putFloat("media_tx", v.getTranslationX())
+                        .putFloat("media_ty", v.getTranslationY()).apply();
+                }
+                return true;
+            case android.view.MotionEvent.ACTION_CANCEL:
+                return true;
+            default:
+                return false;
+        }
+    };
+
+    private View.OnTouchListener resizeListener(final int mode) {
+        return (v, ev) -> {
             switch (ev.getActionMasked()) {
                 case android.view.MotionEvent.ACTION_DOWN:
                     mdX = ev.getRawX();
                     mdY = ev.getRawY();
-                    mdTx = v.getTranslationX();
-                    mdTy = v.getTranslationY();
-                    mdMoved = false;
+                    mdW = mediaBox.getWidth();
+                    mdH = mediaBox.getHeight();
                     return true;
                 case android.view.MotionEvent.ACTION_MOVE: {
-                    float dx = ev.getRawX() - mdX;
-                    float dy = ev.getRawY() - mdY;
-                    if (!mdMoved && Math.abs(dx) + Math.abs(dy) < dp(8)) return true;
-                    mdMoved = true;
-                    float minX = -v.getLeft();
-                    float maxX = rootFrame.getWidth() - v.getRight();
-                    float minY = -v.getTop();
-                    float maxY = rootFrame.getHeight() - v.getBottom();
-                    v.setTranslationX(Math.max(minX, Math.min(maxX, mdTx + dx)));
-                    v.setTranslationY(Math.max(minY, Math.min(maxY, mdTy + dy)));
+                    int nw = mode == 2 ? mdW : Math.round(mdW + (ev.getRawX() - mdX));
+                    int nh = mode == 1 ? -1 : Math.round(mdH + (ev.getRawY() - mdY));
+                    nw = Math.max(dp(160), Math.min(nw, rootFrame.getWidth() - dp(16)));
+                    if (nh > 0) nh = Math.max(dp(64), Math.min(nh, rootFrame.getHeight() / 2));
+                    setMediaSize(nw, nh);
                     return true;
                 }
-                case android.view.MotionEvent.ACTION_UP:
-                    if (mdMoved) {
-                        prefs.edit().putFloat("media_tx", v.getTranslationX())
-                            .putFloat("media_ty", v.getTranslationY()).apply();
-                    } else {
-                        toggleMediaPlay();
-                    }
+                case android.view.MotionEvent.ACTION_UP: {
+                    int saveH = mode == 1 ? prefs.getInt("media_h", -1) : mediaBox.getHeight();
+                    prefs.edit().putInt("media_w", mediaBox.getWidth()).putInt("media_h", saveH).apply();
                     return true;
+                }
                 case android.view.MotionEvent.ACTION_CANCEL:
                     return true;
                 default:
                     return false;
             }
-        });
-        rootFrame.addView(mediaBox, new FrameLayout.LayoutParams(
-            dp(210), ViewGroup.LayoutParams.WRAP_CONTENT));
-        applyMediaPos();
-        applyMedia();
+        };
+    }
+
+    private void setMediaSize(int w, int h) {
+        FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) mediaBox.getLayoutParams();
+        lp.width = w;
+        lp.height = h > 0 ? h : ViewGroup.LayoutParams.WRAP_CONTENT;
+        mediaBox.setLayoutParams(lp);
     }
 
     private boolean hasNotifAccess() {
@@ -3753,16 +3848,31 @@ public class MainActivity extends Activity {
         return flat != null && flat.contains(getPackageName());
     }
 
+    /** Card ko jaga, size ra drag ko offset (saved) lagaune */
+    private void applyMediaPos() {
+        if (mediaBox == null) return;
+        int w = prefs.getInt("media_w", dp(270));
+        int h = prefs.getInt("media_h", -1);
+        FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(
+            w, h > 0 ? h : ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.TOP | Gravity.RIGHT);
+        lp.setMargins(dp(16), dp(120), dp(16), 0);
+        mediaBox.setLayoutParams(lp);
+        mediaBox.setTranslationX(prefs.getFloat("media_tx", 0f));
+        mediaBox.setTranslationY(prefs.getFloat("media_ty", 0f));
+    }
+
     private void applyMedia() {
         if (mediaBox == null) return;
         boolean on = prefs.getBoolean("media", false) && hasNotifAccess();
         applyMediaPos();
-        if (!on) mediaBox.setVisibility(View.GONE);
         if (activeMedia != null) {
             activeMedia.unregisterCallback(mediaCb);
             activeMedia = null;
         }
-        if (!on) return;
+        if (!on) {
+            mediaBox.setVisibility(View.GONE);
+            return;
+        }
         registerSessionListener();
         try {
             android.media.session.MediaSessionManager msm =
@@ -3779,31 +3889,6 @@ public class MainActivity extends Activity {
         updateMedia();
     }
 
-    private void updateMedia() {
-        if (mediaTitle == null) return;
-        if (activeMedia == null) {
-            mediaBox.setVisibility(View.GONE);
-            mediaTitle.setText("Music chhaina");
-            mediaArtist.setText("");
-            mediaPlay.setText("▶");
-            return;
-        }
-        android.media.MediaMetadata m = activeMedia.getMetadata();
-        CharSequence t = m == null ? null : m.getText(android.media.MediaMetadata.METADATA_KEY_TITLE);
-        CharSequence a = m == null ? null : m.getText(android.media.MediaMetadata.METADATA_KEY_ARTIST);
-        mediaTitle.setText(t != null ? t : "Music");
-        mediaArtist.setText(a != null ? a : "");
-        android.media.session.PlaybackState ps = activeMedia.getPlaybackState();
-        boolean playing = ps != null && ps.getState() == android.media.session.PlaybackState.STATE_PLAYING;
-        // sirf music/video chalda matra dekhaune; roke pachhi aafai hide
-        mediaBox.setVisibility(playing && prefs.getBoolean("media", false) ? View.VISIBLE : View.GONE);
-        mediaPlay.setText(playing ? "❚❚" : "▶");
-    }
-
-    private boolean mediaSessionListening = false;
-    private float mdX, mdY, mdTx, mdTy;
-    private boolean mdMoved;
-
     /** Naya app ma music suru bhayo bhane pani aafai pakadcha */
     private void registerSessionListener() {
         if (mediaSessionListening) return;
@@ -3818,31 +3903,33 @@ public class MainActivity extends Activity {
         }
     }
 
-    /** Music card ko thau: top / middle / bottom ra left / right */
-    private void applyMediaPos() {
-        if (mediaBox == null) return;
-        String pos = prefs.getString("media_pos", "top");
-        String side = prefs.getString("media_side", "right");
-        int hg = "left".equals(side) ? Gravity.LEFT : Gravity.RIGHT;
-        int vg;
-        int top = 0;
-        int bottom = 0;
-        if ("middle".equals(pos)) {
-            vg = Gravity.CENTER_VERTICAL;
-        } else if ("bottom".equals(pos)) {
-            vg = Gravity.BOTTOM;
-            bottom = dp(110);
-        } else {
-            vg = Gravity.TOP;
-            top = dp(120);
+    private void updateMedia() {
+        if (mediaTitle == null) return;
+        if (activeMedia == null) {
+            mediaBox.setVisibility(View.GONE);
+            return;
         }
-        FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(
-            dp(210), ViewGroup.LayoutParams.WRAP_CONTENT, vg | hg);
-        lp.setMargins(dp(16), top, dp(16), bottom);
-        mediaBox.setLayoutParams(lp);
-        // user le tanera rakheko jaga (drag garesi)
-        mediaBox.setTranslationX(prefs.getFloat("media_tx", 0f));
-        mediaBox.setTranslationY(prefs.getFloat("media_ty", 0f));
+        android.media.MediaMetadata m = activeMedia.getMetadata();
+        CharSequence t = m == null ? null : m.getText(android.media.MediaMetadata.METADATA_KEY_TITLE);
+        CharSequence a = m == null ? null : m.getText(android.media.MediaMetadata.METADATA_KEY_ARTIST);
+        mediaTitle.setText(t != null ? t : "Music");
+        mediaArtist.setText(a != null ? a : "");
+        android.graphics.Bitmap art = m == null ? null
+            : m.getBitmap(android.media.MediaMetadata.METADATA_KEY_ALBUM_ART);
+        if (art == null && m != null) {
+            art = m.getBitmap(android.media.MediaMetadata.METADATA_KEY_ART);
+        }
+        if (art != null) {
+            mediaArt.setImageBitmap(art);
+        } else {
+            mediaArt.setImageDrawable(null);
+        }
+        android.media.session.PlaybackState ps = activeMedia.getPlaybackState();
+        boolean playing = ps != null && ps.getState() == android.media.session.PlaybackState.STATE_PLAYING;
+        mediaPlay.setText(playing ? "⏸" : "▶");
+        // sirf music/video chalda matra dekhaune
+        boolean show = playing && prefs.getBoolean("media", false);
+        mediaBox.setVisibility(show ? View.VISIBLE : View.GONE);
     }
 
     private void toggleMediaPlay() {
