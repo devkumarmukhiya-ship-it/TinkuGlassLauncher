@@ -3709,7 +3709,6 @@ public class MainActivity extends Activity {
     private android.media.session.MediaController activeMedia;
     private boolean mediaSessionListening = false;
     private float mdX, mdY, mdTx, mdTy;
-    private int mdW, mdH;
     private boolean mdMoved;
 
     private final android.media.session.MediaController.Callback mediaCb =
@@ -3736,7 +3735,17 @@ public class MainActivity extends Activity {
     }
 
     private void setupV32() {
-        mediaBox = new LinearLayout(this);
+        mediaBox = new LinearLayout(this) {
+            @Override
+            public boolean onInterceptTouchEvent(android.view.MotionEvent ev) {
+                // kinara/konama thichda buttons le nakhane, resize ko lagi pakadne
+                if (ev.getActionMasked() == android.view.MotionEvent.ACTION_DOWN
+                        && mediaEdgeAt(ev.getX(), ev.getY(), getWidth(), getHeight()) != 0) {
+                    return true;
+                }
+                return super.onInterceptTouchEvent(ev);
+            }
+        };
         mediaBox.setOrientation(LinearLayout.HORIZONTAL);
         mediaBox.setGravity(Gravity.CENTER_VERTICAL);
         mediaBox.setPadding(dp(10), dp(10), dp(10), dp(10));
@@ -3780,19 +3789,7 @@ public class MainActivity extends Activity {
         ctl.addView(mediaNext);
         col.addView(ctl);
 
-        // size badlaune handle: ↔ chaudai, ↕ waigo, ⤢ dono
-        LinearLayout size = new LinearLayout(this);
-        size.setOrientation(LinearLayout.HORIZONTAL);
-        TextView hR = mediaBtn("↔");
-        TextView hB = mediaBtn("↕");
-        TextView hC = mediaBtn("⤢");
-        hR.setOnTouchListener(resizeListener(1));
-        hB.setOnTouchListener(resizeListener(2));
-        hC.setOnTouchListener(resizeListener(3));
-        size.addView(hR);
-        size.addView(hB);
-        size.addView(hC);
-        col.addView(size);
+        // size: card ko kinara ya kona tanera badlaunus (laptop ko window jastai)
 
         mediaBox.addView(col, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
 
@@ -3811,6 +3808,20 @@ public class MainActivity extends Activity {
         applyMedia();
     }
 
+    private static final int EDGE_L = 1, EDGE_T = 2, EDGE_R = 4, EDGE_B = 8;
+    private int mdEdges, mdL, mdT, mdR, mdB, mdLayR, mdLayT;
+
+    /** Touch kun kinara/kona ma pareko ho (0 = bhitra, drag garne) */
+    private int mediaEdgeAt(float x, float y, int w, int h) {
+        int z = dp(16);
+        int e = 0;
+        if (x < z) e |= EDGE_L;
+        if (x > w - z) e |= EDGE_R;
+        if (y < z) e |= EDGE_T;
+        if (y > h - z) e |= EDGE_B;
+        return e;
+    }
+
     private final View.OnTouchListener dragListener = (v, ev) -> {
         switch (ev.getActionMasked()) {
             case android.view.MotionEvent.ACTION_DOWN:
@@ -3819,12 +3830,23 @@ public class MainActivity extends Activity {
                 mdTx = v.getTranslationX();
                 mdTy = v.getTranslationY();
                 mdMoved = false;
+                mdEdges = mediaEdgeAt(ev.getX(), ev.getY(), v.getWidth(), v.getHeight());
+                mdL = Math.round(v.getLeft() + v.getTranslationX());
+                mdT = Math.round(v.getTop() + v.getTranslationY());
+                mdR = mdL + v.getWidth();
+                mdB = mdT + v.getHeight();
+                mdLayR = Math.round(v.getRight() - v.getTranslationX());
+                mdLayT = v.getTop();
                 return true;
             case android.view.MotionEvent.ACTION_MOVE: {
                 float dx = ev.getRawX() - mdX;
                 float dy = ev.getRawY() - mdY;
-                if (!mdMoved && Math.abs(dx) + Math.abs(dy) < dp(8)) return true;
+                if (!mdMoved && Math.abs(dx) + Math.abs(dy) < dp(4)) return true;
                 mdMoved = true;
+                if (mdEdges != 0) {
+                    resizeMediaFromEdges(Math.round(dx), Math.round(dy));
+                    return true;
+                }
                 float minX = -v.getLeft();
                 float maxX = rootFrame.getWidth() - v.getRight();
                 float minY = -v.getTop();
@@ -3835,8 +3857,11 @@ public class MainActivity extends Activity {
             }
             case android.view.MotionEvent.ACTION_UP:
                 if (mdMoved) {
+                    FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) v.getLayoutParams();
                     prefs.edit().putFloat("media_tx", v.getTranslationX())
-                        .putFloat("media_ty", v.getTranslationY()).apply();
+                        .putFloat("media_ty", v.getTranslationY())
+                        .putInt("media_w", lp.width)
+                        .putInt("media_h", lp.height > 0 ? lp.height : -1).apply();
                 }
                 return true;
             case android.view.MotionEvent.ACTION_CANCEL:
@@ -3846,41 +3871,24 @@ public class MainActivity extends Activity {
         }
     };
 
-    private View.OnTouchListener resizeListener(final int mode) {
-        return (v, ev) -> {
-            switch (ev.getActionMasked()) {
-                case android.view.MotionEvent.ACTION_DOWN:
-                    mdX = ev.getRawX();
-                    mdY = ev.getRawY();
-                    mdW = mediaBox.getWidth();
-                    mdH = mediaBox.getHeight();
-                    return true;
-                case android.view.MotionEvent.ACTION_MOVE: {
-                    int nw = mode == 2 ? mdW : Math.round(mdW + (ev.getRawX() - mdX));
-                    int nh = mode == 1 ? -1 : Math.round(mdH + (ev.getRawY() - mdY));
-                    nw = Math.max(dp(160), Math.min(nw, rootFrame.getWidth() - dp(16)));
-                    if (nh > 0) nh = Math.max(dp(64), Math.min(nh, rootFrame.getHeight() / 2));
-                    setMediaSize(nw, nh);
-                    return true;
-                }
-                case android.view.MotionEvent.ACTION_UP: {
-                    int saveH = mode == 1 ? prefs.getInt("media_h", -1) : mediaBox.getHeight();
-                    prefs.edit().putInt("media_w", mediaBox.getWidth()).putInt("media_h", saveH).apply();
-                    return true;
-                }
-                case android.view.MotionEvent.ACTION_CANCEL:
-                    return true;
-                default:
-                    return false;
-            }
-        };
-    }
-
-    private void setMediaSize(int w, int h) {
+    /** Jun kinara tanincha tyahi tira card ko size badhcha/ghatcha, arko kinara ta-tai rahancha */
+    private void resizeMediaFromEdges(int dx, int dy) {
+        int minW = dp(160), minH = dp(64);
+        int rw = rootFrame.getWidth(), rh = rootFrame.getHeight();
+        int l = mdL, t = mdT, r = mdR, b = mdB;
+        if ((mdEdges & EDGE_L) != 0) l = Math.max(0, Math.min(mdL + dx, mdR - minW));
+        if ((mdEdges & EDGE_R) != 0) r = Math.min(rw, Math.max(mdR + dx, mdL + minW));
+        if ((mdEdges & EDGE_T) != 0) t = Math.max(0, Math.min(mdT + dy, mdB - minH));
+        if ((mdEdges & EDGE_B) != 0) b = Math.min(rh, Math.max(mdB + dy, mdT + minH));
+        int w = r - l;
+        boolean vert = (mdEdges & (EDGE_T | EDGE_B)) != 0;
         FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) mediaBox.getLayoutParams();
         lp.width = w;
-        lp.height = h > 0 ? h : ViewGroup.LayoutParams.WRAP_CONTENT;
+        if (vert) lp.height = b - t;
         mediaBox.setLayoutParams(lp);
+        // gravity right/top bhayeko le translation le thik jaga ma rakhne
+        mediaBox.setTranslationX(l - (mdLayR - w));
+        mediaBox.setTranslationY(t - mdLayT);
     }
 
     private boolean hasNotifAccess() {
@@ -4074,7 +4082,8 @@ public class MainActivity extends Activity {
         + "U|75|Battery charged {p} percent\n"
         + "U|50|Battery charged {p} percent\n"
         + "D|20|Battery low, please connect the charger";
-    private static final String DEF_CONNECT = "Battery {p} percent, charger connected, battery start charging";
+    private static final String OLD_DEF_CONNECT = "Battery {p} percent, charger connected, battery start charging";
+    private static final String DEF_CONNECT = "Charger connected, battery start charging, battery {p} percent";
     private static final String DEF_DISCONNECT = "Charger disconnected, battery {p} percent";
 
     private BroadcastReceiver chargeReceiver;
@@ -4095,7 +4104,9 @@ public class MainActivity extends Activity {
                 chargeFired.clear();
                 chargePrime(pct, plugged);
                 if (plugged) {
-                    chargeSay(prefs.getString("msg_connect", DEF_CONNECT), pct);
+                    String cm = prefs.getString("msg_connect", DEF_CONNECT);
+                    if (OLD_DEF_CONNECT.equals(cm)) cm = DEF_CONNECT;
+                    chargeSay(cm, pct);
                 } else {
                     chargeSay(prefs.getString("msg_disconnect", DEF_DISCONNECT), pct);
                 }
