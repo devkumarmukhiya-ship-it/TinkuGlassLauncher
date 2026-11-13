@@ -3713,9 +3713,13 @@ public class MainActivity extends Activity {
     private LinearLayout mediaSeekRow;
     private TextView mediaTitle;
     private TextView mediaArtist;
-    private TextView mediaPrev;
-    private TextView mediaPlay;
-    private TextView mediaNext;
+    private MediaIconView mediaShuf;
+    private MediaIconView mediaPrev;
+    private MediaIconView mediaPlay;
+    private MediaIconView mediaNext;
+    private MediaIconView mediaRep;
+    private boolean mediaShuffleOn = false;
+    private int mediaRepeatMode = 0;   // 0 = off, 1 = sabai, 2 = ek gana
     private TextView mediaElapsed;
     private TextView mediaRemain;
     private android.widget.SeekBar mediaSeek;
@@ -3745,16 +3749,6 @@ public class MainActivity extends Activity {
                 updateMedia();
             }
         };
-
-    private TextView mediaBtn(String glyph) {
-        TextView t = new TextView(this);
-        t.setText(glyph);
-        t.setTextColor(0xFFFFFFFF);
-        t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
-        t.setGravity(Gravity.CENTER);
-        t.setPadding(dp(5), dp(4), dp(5), dp(4));
-        return t;
-    }
 
     private void setupV32() {
         mediaBox = new FrameLayout(this) {
@@ -3845,16 +3839,28 @@ public class MainActivity extends Activity {
         // card tanera thulo garda bichko khali jaga (controls + line talai jancha)
         mediaContent.addView(new View(this), new LinearLayout.LayoutParams(MP, 0, 1f));
 
-        // ---- controls: aghi / play-pause / pachi (sano ma upar daya, thulo ma bich)
+        // ---- controls: shuffle / prev / play-pause (gol) / next / repeat
         mediaCtl = new LinearLayout(this);
         mediaCtl.setOrientation(LinearLayout.HORIZONTAL);
-        mediaCtl.setGravity(Gravity.CENTER);
-        mediaPrev = mediaBtn("⏮");
-        mediaPlay = mediaBtn("▶");
-        mediaNext = mediaBtn("⏭");
-        mediaCtl.addView(mediaPrev);
-        mediaCtl.addView(mediaPlay);
-        mediaCtl.addView(mediaNext);
+        mediaCtl.setGravity(Gravity.CENTER_VERTICAL);
+        mediaShuf = new MediaIconView(this, MediaIconView.SHUFFLE);
+        mediaPrev = new MediaIconView(this, MediaIconView.PREV);
+        mediaPlay = new MediaIconView(this, MediaIconView.PLAY);
+        mediaNext = new MediaIconView(this, MediaIconView.NEXT);
+        mediaRep = new MediaIconView(this, MediaIconView.REPEAT);
+        mediaShuf.setActive(false);
+        mediaRep.setActive(false);
+        mediaShuf.setContentDescription("Shuffle");
+        mediaPrev.setContentDescription("Previous");
+        mediaPlay.setContentDescription("Play or pause");
+        mediaNext.setContentDescription("Next");
+        mediaRep.setContentDescription("Repeat");
+        mediaCtl.addView(mediaShuf, new LinearLayout.LayoutParams(0, dp(32), 1f));
+        mediaCtl.addView(mediaPrev, new LinearLayout.LayoutParams(0, dp(32), 1f));
+        mediaCtl.addView(mediaPlay, new LinearLayout.LayoutParams(0, dp(40), 1.3f));
+        mediaCtl.addView(mediaNext, new LinearLayout.LayoutParams(0, dp(32), 1f));
+        mediaCtl.addView(mediaRep, new LinearLayout.LayoutParams(0, dp(32), 1f));
+        mediaContent.addView(mediaCtl, new LinearLayout.LayoutParams(MP, WC));
 
         // ---- music line: bayan ma bajisakyo, dayan ma baki (tap garda total <-> baki)
         mediaSeekRow = new LinearLayout(this);
@@ -3889,6 +3895,8 @@ public class MainActivity extends Activity {
         mediaContent.addView(mediaSeekRow, new LinearLayout.LayoutParams(MP, dp(22)));
 
         mediaPlay.setOnClickListener(v -> toggleMediaPlay());
+        mediaShuf.setOnClickListener(v -> toggleMediaShuffle());
+        mediaRep.setOnClickListener(v -> cycleMediaRepeat());
         mediaPrev.setOnClickListener(v -> {
             if (activeMedia != null) activeMedia.getTransportControls().skipToPrevious();
         });
@@ -3929,7 +3937,7 @@ public class MainActivity extends Activity {
         mediaBox.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or2, ob) -> {
             if (mediaBox.getVisibility() != View.VISIBLE) return;
             mediaBox.post(() -> {
-                boolean big = mediaBox.getHeight() >= dp(130);
+                boolean big = mediaBox.getHeight() >= dp(150);
                 if (big != mediaLarge) applyMediaMode(big);
             });
         });
@@ -3942,26 +3950,22 @@ public class MainActivity extends Activity {
     }
 
     /**
-     * Sano: thumbnail left, buttons right, tala music line.
-     * Thulo: album art puro background, buttons bich ma, tala music line.
+     * Sano: album thumbnail + naam, tala buttons ra music line.
+     * Thulo: album art puro background, buttons ra music line thulo.
      */
     private void applyMediaMode(boolean large) {
         mediaLarge = large;
-        ViewGroup p = (ViewGroup) mediaCtl.getParent();
-        if (p != null) p.removeView(mediaCtl);
-        if (large) {
-            mediaContent.addView(mediaCtl, mediaContent.indexOfChild(mediaSeekRow),
-                new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.WRAP_CONTENT));
-        } else {
-            mediaTop.addView(mediaCtl, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        int sideH = dp(large ? 40 : 32);
+        int playH = dp(large ? 56 : 40);
+        MediaIconView[] side = { mediaShuf, mediaPrev, mediaNext, mediaRep };
+        for (MediaIconView v : side) {
+            ViewGroup.LayoutParams lp = v.getLayoutParams();
+            lp.height = sideH;
+            v.setLayoutParams(lp);
         }
-        TextView[] btns = { mediaPrev, mediaPlay, mediaNext };
-        for (TextView b : btns) {
-            b.setTextSize(TypedValue.COMPLEX_UNIT_SP, large ? 24 : 16);
-            b.setPadding(dp(large ? 18 : 5), dp(4), dp(large ? 18 : 5), dp(4));
-        }
+        ViewGroup.LayoutParams plp = mediaPlay.getLayoutParams();
+        plp.height = playH;
+        mediaPlay.setLayoutParams(plp);
         mediaTitle.setTextSize(large ? 16 : 14);
         mediaArtist.setTextSize(large ? 12 : 11);
         applyMediaArtVisibility();
@@ -4047,7 +4051,7 @@ public class MainActivity extends Activity {
 
     /** Jun kinara tanincha tyahi tira card ko size badhcha/ghatcha, arko kinara ta-tai rahancha */
     private void resizeMediaFromEdges(int dx, int dy) {
-        int minW = dp(220), minH = dp(80);
+        int minW = dp(220), minH = dp(124);
         int rw = rootFrame.getWidth(), rh = rootFrame.getHeight();
         int l = mdL, t = mdT, r = mdR, b = mdB;
         if ((mdEdges & EDGE_L) != 0) l = Math.max(0, Math.min(mdL + dx, mdR - minW));
@@ -4076,7 +4080,7 @@ public class MainActivity extends Activity {
         if (mediaBox == null) return;
         int w = Math.max(dp(220), prefs.getInt("media_w", dp(270)));
         int h = prefs.getInt("media_h", -1);
-        if (h > 0) h = Math.max(dp(80), h);
+        if (h > 0) h = Math.max(dp(124), h);
         FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(
             w, h > 0 ? h : ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.TOP | Gravity.RIGHT);
         lp.setMargins(dp(16), dp(120), dp(16), 0);
@@ -4146,6 +4150,9 @@ public class MainActivity extends Activity {
         MediaNotifService.watchPkg = pkg;
         if (pkg != null && !pkg.equals(mediaSrcPkg)) {
             mediaSrcPkg = pkg;
+            mediaShuffleOn = false;
+            mediaRepeatMode = 0;
+            applyMediaToggles();
             try {
                 mediaSrc.setImageDrawable(getPackageManager().getApplicationIcon(pkg));
                 mediaSrc.setVisibility(View.VISIBLE);
@@ -4187,7 +4194,7 @@ public class MainActivity extends Activity {
 
         android.media.session.PlaybackState ps = activeMedia.getPlaybackState();
         boolean playing = ps != null && ps.getState() == android.media.session.PlaybackState.STATE_PLAYING;
-        mediaPlay.setText(playing ? "⏸" : "▶");
+        mediaPlay.setType(playing ? MediaIconView.PAUSE : MediaIconView.PLAY);
         // sirf music/video chalda matra dekhaune
         boolean show = playing && prefs.getBoolean("media", false);
         mediaBox.setVisibility(show ? View.VISIBLE : View.GONE);
@@ -4309,6 +4316,59 @@ public class MainActivity extends Activity {
         android.graphics.BitmapFactory.Options o2 = new android.graphics.BitmapFactory.Options();
         o2.inSampleSize = s;
         return android.graphics.BitmapFactory.decodeByteArray(data, 0, data.length, o2);
+    }
+
+    private void applyMediaToggles() {
+        mediaShuf.setActive(mediaShuffleOn);
+        mediaRep.setActive(mediaRepeatMode != 0);
+        mediaRep.setType(mediaRepeatMode == 2 ? MediaIconView.REPEAT_ONE : MediaIconView.REPEAT);
+    }
+
+    /** Music app le dekhako custom action (naam ma "shuffle"/"repeat" bhayeko) khojne */
+    private android.media.session.PlaybackState.CustomAction findMediaAction(String word) {
+        if (activeMedia == null) return null;
+        android.media.session.PlaybackState ps = activeMedia.getPlaybackState();
+        if (ps == null || ps.getCustomActions() == null) return null;
+        for (android.media.session.PlaybackState.CustomAction ca : ps.getCustomActions()) {
+            String act = ca.getAction() == null ? "" : ca.getAction().toLowerCase(java.util.Locale.ROOT);
+            String nm = ca.getName() == null ? "" : ca.getName().toString().toLowerCase(java.util.Locale.ROOT);
+            if (act.contains(word) || nm.contains(word)) return ca;
+        }
+        return null;
+    }
+
+    private void toggleMediaShuffle() {
+        if (activeMedia == null) return;
+        mediaShuffleOn = !mediaShuffleOn;
+        android.media.session.PlaybackState.CustomAction ca = findMediaAction("shuffle");
+        if (ca != null) {
+            activeMedia.getTransportControls().sendCustomAction(ca, null);
+        } else {
+            Bundle b = new Bundle();
+            b.putInt("android.support.v4.media.session.action.ARGUMENT_SHUFFLE_MODE",
+                mediaShuffleOn ? 1 : 0);
+            activeMedia.getTransportControls().sendCustomAction(
+                "android.support.v4.media.session.action.SET_SHUFFLE_MODE", b);
+        }
+        applyMediaToggles();
+    }
+
+    /** repeat: off -> sabai -> ek gana -> off */
+    private void cycleMediaRepeat() {
+        if (activeMedia == null) return;
+        mediaRepeatMode = (mediaRepeatMode + 1) % 3;
+        android.media.session.PlaybackState.CustomAction ca = findMediaAction("repeat");
+        if (ca != null) {
+            activeMedia.getTransportControls().sendCustomAction(ca, null);
+        } else {
+            // androidx ko repeat mode: 0 = none, 1 = one, 2 = all
+            int mode = mediaRepeatMode == 0 ? 0 : (mediaRepeatMode == 1 ? 2 : 1);
+            Bundle b = new Bundle();
+            b.putInt("android.support.v4.media.session.action.ARGUMENT_REPEAT_MODE", mode);
+            activeMedia.getTransportControls().sendCustomAction(
+                "android.support.v4.media.session.action.SET_REPEAT_MODE", b);
+        }
+        applyMediaToggles();
     }
 
     private void toggleMediaPlay() {
