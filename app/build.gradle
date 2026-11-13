@@ -2,6 +2,11 @@ plugins {
     id 'com.android.application'
 }
 
+// Major.minor yahaan manually badlaunu (jastai 1.1 ya 2.0).
+// Patch number chai har GitHub build sanga automatic badhchha.
+def baseVersion = "1.0"
+def buildNo = System.getenv("GITHUB_RUN_NUMBER") ?: "1"
+
 android {
     namespace 'com.tinku.glasslauncher'
     compileSdk 34
@@ -11,7 +16,7 @@ android {
         minSdk 24
         targetSdk 34
         versionCode Integer.parseInt(System.getenv("GITHUB_RUN_NUMBER") ?: "1")
-        versionName "1.0"
+        versionName "${baseVersion}.${buildNo}"
     }
 
     signingConfigs {
