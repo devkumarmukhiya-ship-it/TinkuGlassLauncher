@@ -3573,12 +3573,15 @@ public class MainActivity extends Activity {
     protected void onPause() {
         lockHandler.removeCallbacks(idleLockRun);
         super.onPause();
+        stopMediaTick();
         tinkuPause();
         hideOverlay();
     }
 
     @Override
     protected void onDestroy() {
+        stopMediaTick();
+        MediaNotifService.hook = null;
         tinkuPause();
         tinkuSpeakShutdown();
         unregisterV7();
@@ -3698,18 +3701,37 @@ public class MainActivity extends Activity {
         return "Good Evening";
     }
 
-    // ===== Step 32: music card (album art, naam, pause/resume, aagadi/pachhadi, size, drag) =====
-    private LinearLayout mediaBox;
-    private ImageView mediaArt;
+    // ===== Step 32: music card (album art, app icon, controls, seek line, size, drag) =====
+    private FrameLayout mediaBox;
+    private ImageView mediaArt;      // sano card: album thumbnail
+    private ImageView mediaBg;       // thulo card: album background
+    private View mediaScrim;
+    private ImageView mediaSrc;      // kun app bata bajdai xa (icon)
+    private LinearLayout mediaContent;
+    private LinearLayout mediaTop;
+    private LinearLayout mediaCtl;
+    private LinearLayout mediaSeekRow;
     private TextView mediaTitle;
     private TextView mediaArtist;
     private TextView mediaPrev;
     private TextView mediaPlay;
     private TextView mediaNext;
+    private TextView mediaElapsed;
+    private TextView mediaRemain;
+    private android.widget.SeekBar mediaSeek;
     private android.media.session.MediaController activeMedia;
     private boolean mediaSessionListening = false;
+    private boolean mediaLarge = false;
+    private boolean mediaSeeking = false;
+    private boolean mediaShowTotal = false;
+    private long mediaDurMs = 0L;
+    private android.graphics.Bitmap mediaArtBmp;
+    private String mediaArtKey = "";
+    private String mediaArtUriTried = "";
+    private String mediaSrcPkg = "";
     private float mdX, mdY, mdTx, mdTy;
     private boolean mdMoved;
+    private final Handler mediaTick = new Handler(Looper.getMainLooper());
 
     private final android.media.session.MediaController.Callback mediaCb =
         new android.media.session.MediaController.Callback() {
@@ -3728,14 +3750,14 @@ public class MainActivity extends Activity {
         TextView t = new TextView(this);
         t.setText(glyph);
         t.setTextColor(0xFFFFFFFF);
-        t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18);
+        t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
         t.setGravity(Gravity.CENTER);
-        t.setPadding(dp(8), dp(4), dp(8), dp(4));
+        t.setPadding(dp(5), dp(4), dp(5), dp(4));
         return t;
     }
 
     private void setupV32() {
-        mediaBox = new LinearLayout(this) {
+        mediaBox = new FrameLayout(this) {
             @Override
             public boolean onInterceptTouchEvent(android.view.MotionEvent ev) {
                 // kinara/konama thichda buttons le nakhane, resize ko lagi pakadne
@@ -3746,22 +3768,60 @@ public class MainActivity extends Activity {
                 return super.onInterceptTouchEvent(ev);
             }
         };
-        mediaBox.setOrientation(LinearLayout.HORIZONTAL);
-        mediaBox.setGravity(Gravity.CENTER_VERTICAL);
-        mediaBox.setPadding(dp(10), dp(10), dp(10), dp(10));
         GradientDrawable bg = new GradientDrawable();
         bg.setColor(0x66000000);
         bg.setCornerRadius(dp(18));
         mediaBox.setBackground(bg);
+        mediaBox.setClipToOutline(true);
+
+        final int MP = ViewGroup.LayoutParams.MATCH_PARENT;
+        final int WC = ViewGroup.LayoutParams.WRAP_CONTENT;
+
+        // thulo card ma: album art background + tyo mathi dark scrim (akshar dekhna)
+        mediaBg = new ImageView(this);
+        mediaBg.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        mediaBg.setVisibility(View.GONE);
+        mediaBox.addView(mediaBg, new FrameLayout.LayoutParams(MP, MP));
+
+        mediaScrim = new View(this);
+        mediaScrim.setBackground(new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
+            new int[] { 0x66000000, 0xB3000000 }));
+        mediaScrim.setVisibility(View.GONE);
+        mediaBox.addView(mediaScrim, new FrameLayout.LayoutParams(MP, MP));
+
+        mediaContent = new LinearLayout(this);
+        mediaContent.setOrientation(LinearLayout.VERTICAL);
+        mediaContent.setPadding(dp(14), dp(12), dp(14), dp(14));
+        mediaBox.addView(mediaContent, new FrameLayout.LayoutParams(MP, MP));
+
+        // ---- upar: thumbnail (sano card) + [app icon + naam / artist]
+        mediaTop = new LinearLayout(this);
+        mediaTop.setOrientation(LinearLayout.HORIZONTAL);
+        mediaTop.setGravity(Gravity.CENTER_VERTICAL);
 
         mediaArt = new ImageView(this);
         mediaArt.setScaleType(ImageView.ScaleType.CENTER_CROP);
-        mediaArt.setBackgroundColor(0x33FFFFFF);
-        mediaBox.addView(mediaArt, new LinearLayout.LayoutParams(dp(52), dp(52)));
+        GradientDrawable artBg = new GradientDrawable();
+        artBg.setColor(0x33FFFFFF);
+        artBg.setCornerRadius(dp(8));
+        mediaArt.setBackground(artBg);
+        mediaArt.setClipToOutline(true);
+        LinearLayout.LayoutParams artLp = new LinearLayout.LayoutParams(dp(40), dp(40));
+        artLp.rightMargin = dp(10);
+        mediaTop.addView(mediaArt, artLp);
 
         LinearLayout col = new LinearLayout(this);
         col.setOrientation(LinearLayout.VERTICAL);
-        col.setPadding(dp(10), 0, dp(4), 0);
+
+        LinearLayout titleRow = new LinearLayout(this);
+        titleRow.setOrientation(LinearLayout.HORIZONTAL);
+        titleRow.setGravity(Gravity.CENTER_VERTICAL);
+
+        mediaSrc = new ImageView(this);
+        mediaSrc.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        LinearLayout.LayoutParams srcLp = new LinearLayout.LayoutParams(dp(16), dp(16));
+        srcLp.rightMargin = dp(6);
+        titleRow.addView(mediaSrc, srcLp);
 
         mediaTitle = new TextView(this);
         mediaTitle.setTextColor(0xFFFFFFFF);
@@ -3769,29 +3829,64 @@ public class MainActivity extends Activity {
         mediaTitle.setTypeface(Typeface.create("sans-serif-medium", Typeface.BOLD));
         mediaTitle.setSingleLine(true);
         mediaTitle.setEllipsize(android.text.TextUtils.TruncateAt.END);
-        col.addView(mediaTitle);
+        titleRow.addView(mediaTitle, new LinearLayout.LayoutParams(0, WC, 1f));
+        col.addView(titleRow, new LinearLayout.LayoutParams(MP, WC));
 
         mediaArtist = new TextView(this);
         mediaArtist.setTextColor(0xCCFFFFFF);
         mediaArtist.setTextSize(11);
         mediaArtist.setSingleLine(true);
         mediaArtist.setEllipsize(android.text.TextUtils.TruncateAt.END);
-        col.addView(mediaArtist);
+        col.addView(mediaArtist, new LinearLayout.LayoutParams(MP, WC));
 
-        LinearLayout ctl = new LinearLayout(this);
-        ctl.setOrientation(LinearLayout.HORIZONTAL);
-        ctl.setGravity(Gravity.CENTER_VERTICAL);
+        mediaTop.addView(col, new LinearLayout.LayoutParams(0, WC, 1f));
+        mediaContent.addView(mediaTop, new LinearLayout.LayoutParams(MP, WC));
+
+        // card tanera thulo garda bichko khali jaga (controls + line talai jancha)
+        mediaContent.addView(new View(this), new LinearLayout.LayoutParams(MP, 0, 1f));
+
+        // ---- controls: aghi / play-pause / pachi (sano ma upar daya, thulo ma bich)
+        mediaCtl = new LinearLayout(this);
+        mediaCtl.setOrientation(LinearLayout.HORIZONTAL);
+        mediaCtl.setGravity(Gravity.CENTER);
         mediaPrev = mediaBtn("⏮");
         mediaPlay = mediaBtn("▶");
         mediaNext = mediaBtn("⏭");
-        ctl.addView(mediaPrev);
-        ctl.addView(mediaPlay);
-        ctl.addView(mediaNext);
-        col.addView(ctl);
+        mediaCtl.addView(mediaPrev);
+        mediaCtl.addView(mediaPlay);
+        mediaCtl.addView(mediaNext);
 
-        // size: card ko kinara ya kona tanera badlaunus (laptop ko window jastai)
+        // ---- music line: bayan ma bajisakyo, dayan ma baki (tap garda total <-> baki)
+        mediaSeekRow = new LinearLayout(this);
+        mediaSeekRow.setOrientation(LinearLayout.HORIZONTAL);
+        mediaSeekRow.setGravity(Gravity.CENTER_VERTICAL);
 
-        mediaBox.addView(col, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        mediaElapsed = new TextView(this);
+        mediaElapsed.setTextColor(0xCCFFFFFF);
+        mediaElapsed.setTextSize(10);
+        mediaElapsed.setSingleLine(true);
+        mediaElapsed.setMinWidth(dp(34));
+        mediaElapsed.setText("0:00");
+        mediaSeekRow.addView(mediaElapsed, new LinearLayout.LayoutParams(WC, WC));
+
+        mediaSeek = new android.widget.SeekBar(this);
+        mediaSeek.setPadding(dp(8), 0, dp(8), 0);
+        mediaSeek.setMax(1);
+        android.content.res.ColorStateList white = android.content.res.ColorStateList.valueOf(0xFFFFFFFF);
+        mediaSeek.setProgressTintList(white);
+        mediaSeek.setThumbTintList(white);
+        mediaSeek.setProgressBackgroundTintList(android.content.res.ColorStateList.valueOf(0x55FFFFFF));
+        mediaSeekRow.addView(mediaSeek, new LinearLayout.LayoutParams(0, dp(22), 1f));
+
+        mediaRemain = new TextView(this);
+        mediaRemain.setTextColor(0xCCFFFFFF);
+        mediaRemain.setTextSize(10);
+        mediaRemain.setSingleLine(true);
+        mediaRemain.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
+        mediaRemain.setMinWidth(dp(38));
+        mediaRemain.setText("--:--");
+        mediaSeekRow.addView(mediaRemain, new LinearLayout.LayoutParams(WC, WC));
+        mediaContent.addView(mediaSeekRow, new LinearLayout.LayoutParams(MP, dp(22)));
 
         mediaPlay.setOnClickListener(v -> toggleMediaPlay());
         mediaPrev.setOnClickListener(v -> {
@@ -3800,12 +3895,91 @@ public class MainActivity extends Activity {
         mediaNext.setOnClickListener(v -> {
             if (activeMedia != null) activeMedia.getTransportControls().skipToNext();
         });
+        // dayan ko samay tap: total samay <-> baki samay
+        mediaRemain.setOnClickListener(v -> {
+            mediaShowTotal = !mediaShowTotal;
+            updateMediaProgress();
+        });
+        mediaSeek.setOnSeekBarChangeListener(new android.widget.SeekBar.OnSeekBarChangeListener() {
+            @Override
+            public void onProgressChanged(android.widget.SeekBar s, int p, boolean fromUser) {
+                if (!fromUser) return;
+                mediaElapsed.setText(fmtMediaTime(p));
+                if (mediaDurMs > 0) {
+                    mediaRemain.setText(mediaShowTotal ? fmtMediaTime(mediaDurMs)
+                        : "-" + fmtMediaTime(Math.max(0L, mediaDurMs - p)));
+                }
+            }
+
+            @Override
+            public void onStartTrackingTouch(android.widget.SeekBar s) {
+                mediaSeeking = true;
+            }
+
+            @Override
+            public void onStopTrackingTouch(android.widget.SeekBar s) {
+                mediaSeeking = false;
+                if (activeMedia != null) activeMedia.getTransportControls().seekTo(s.getProgress());
+            }
+        });
 
         // card ko body tanera jaga badlaune
         mediaBox.setOnTouchListener(dragListener);
+        // card ko height anusar sano <-> thulo layout
+        mediaBox.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or2, ob) -> {
+            if (mediaBox.getVisibility() != View.VISIBLE) return;
+            mediaBox.post(() -> {
+                boolean big = mediaBox.getHeight() >= dp(130);
+                if (big != mediaLarge) applyMediaMode(big);
+            });
+        });
         rootFrame.addView(mediaBox, new FrameLayout.LayoutParams(dp(270), ViewGroup.LayoutParams.WRAP_CONTENT));
+        applyMediaMode(false);
         applyMediaPos();
         applyMedia();
+        // album art notification ma matra aayo bhane pani pakadne
+        MediaNotifService.hook = () -> updateMedia();
+    }
+
+    /**
+     * Sano: thumbnail left, buttons right, tala music line.
+     * Thulo: album art puro background, buttons bich ma, tala music line.
+     */
+    private void applyMediaMode(boolean large) {
+        mediaLarge = large;
+        ViewGroup p = (ViewGroup) mediaCtl.getParent();
+        if (p != null) p.removeView(mediaCtl);
+        if (large) {
+            mediaContent.addView(mediaCtl, mediaContent.indexOfChild(mediaSeekRow),
+                new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT));
+        } else {
+            mediaTop.addView(mediaCtl, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        }
+        TextView[] btns = { mediaPrev, mediaPlay, mediaNext };
+        for (TextView b : btns) {
+            b.setTextSize(TypedValue.COMPLEX_UNIT_SP, large ? 24 : 16);
+            b.setPadding(dp(large ? 18 : 5), dp(4), dp(large ? 18 : 5), dp(4));
+        }
+        mediaTitle.setTextSize(large ? 16 : 14);
+        mediaArtist.setTextSize(large ? 12 : 11);
+        applyMediaArtVisibility();
+    }
+
+    private void applyMediaArtVisibility() {
+        boolean hasArt = mediaArtBmp != null;
+        mediaArt.setVisibility(mediaLarge ? View.GONE : View.VISIBLE);
+        int bgVis = (mediaLarge && hasArt) ? View.VISIBLE : View.GONE;
+        mediaBg.setVisibility(bgVis);
+        mediaScrim.setVisibility(bgVis);
+    }
+
+    private void setMediaArt(android.graphics.Bitmap art) {
+        mediaArtBmp = art;
+        mediaArt.setImageBitmap(art);
+        mediaBg.setImageBitmap(art);
+        applyMediaArtVisibility();
     }
 
     private static final int EDGE_L = 1, EDGE_T = 2, EDGE_R = 4, EDGE_B = 8;
@@ -3813,7 +3987,7 @@ public class MainActivity extends Activity {
 
     /** Touch kun kinara/kona ma pareko ho (0 = bhitra, drag garne) */
     private int mediaEdgeAt(float x, float y, int w, int h) {
-        int z = dp(16);
+        int z = dp(12);
         int e = 0;
         if (x < z) e |= EDGE_L;
         if (x > w - z) e |= EDGE_R;
@@ -3873,7 +4047,7 @@ public class MainActivity extends Activity {
 
     /** Jun kinara tanincha tyahi tira card ko size badhcha/ghatcha, arko kinara ta-tai rahancha */
     private void resizeMediaFromEdges(int dx, int dy) {
-        int minW = dp(160), minH = dp(64);
+        int minW = dp(220), minH = dp(80);
         int rw = rootFrame.getWidth(), rh = rootFrame.getHeight();
         int l = mdL, t = mdT, r = mdR, b = mdB;
         if ((mdEdges & EDGE_L) != 0) l = Math.max(0, Math.min(mdL + dx, mdR - minW));
@@ -3900,8 +4074,9 @@ public class MainActivity extends Activity {
     /** Card ko jaga, size ra drag ko offset (saved) lagaune */
     private void applyMediaPos() {
         if (mediaBox == null) return;
-        int w = prefs.getInt("media_w", dp(270));
+        int w = Math.max(dp(220), prefs.getInt("media_w", dp(270)));
         int h = prefs.getInt("media_h", -1);
+        if (h > 0) h = Math.max(dp(80), h);
         FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(
             w, h > 0 ? h : ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.TOP | Gravity.RIGHT);
         lp.setMargins(dp(16), dp(120), dp(16), 0);
@@ -3920,6 +4095,7 @@ public class MainActivity extends Activity {
         }
         if (!on) {
             mediaBox.setVisibility(View.GONE);
+            stopMediaTick();
             return;
         }
         registerSessionListener();
@@ -3956,6 +4132,7 @@ public class MainActivity extends Activity {
         if (mediaTitle == null) return;
         if (activeMedia == null) {
             mediaBox.setVisibility(View.GONE);
+            stopMediaTick();
             return;
         }
         android.media.MediaMetadata m = activeMedia.getMetadata();
@@ -3963,22 +4140,175 @@ public class MainActivity extends Activity {
         CharSequence a = m == null ? null : m.getText(android.media.MediaMetadata.METADATA_KEY_ARTIST);
         mediaTitle.setText(t != null ? t : "Music");
         mediaArtist.setText(a != null ? a : "");
-        android.graphics.Bitmap art = m == null ? null
-            : m.getBitmap(android.media.MediaMetadata.METADATA_KEY_ALBUM_ART);
-        if (art == null && m != null) {
-            art = m.getBitmap(android.media.MediaMetadata.METADATA_KEY_ART);
+
+        // kun app bata bajdai xa: tyo app ko icon
+        String pkg = activeMedia.getPackageName();
+        MediaNotifService.watchPkg = pkg;
+        if (pkg != null && !pkg.equals(mediaSrcPkg)) {
+            mediaSrcPkg = pkg;
+            try {
+                mediaSrc.setImageDrawable(getPackageManager().getApplicationIcon(pkg));
+                mediaSrc.setVisibility(View.VISIBLE);
+            } catch (Exception e) {
+                mediaSrc.setImageDrawable(null);
+                mediaSrc.setVisibility(View.GONE);
+            }
+        }
+
+        // album art: metadata bitmap -> notification ko thulo icon -> art URI
+        String key = pkg + "|" + t + "|" + a;
+        boolean sameTrack = key.equals(mediaArtKey);
+        mediaArtKey = key;
+        if (!sameTrack) mediaArtUriTried = "";
+        android.graphics.Bitmap art = null;
+        String artUri = null;
+        if (m != null) {
+            art = m.getBitmap(android.media.MediaMetadata.METADATA_KEY_ALBUM_ART);
+            if (art == null) art = m.getBitmap(android.media.MediaMetadata.METADATA_KEY_ART);
+            if (art == null) art = m.getBitmap(android.media.MediaMetadata.METADATA_KEY_DISPLAY_ICON);
+            artUri = m.getString(android.media.MediaMetadata.METADATA_KEY_ALBUM_ART_URI);
+            if (artUri == null) artUri = m.getString(android.media.MediaMetadata.METADATA_KEY_ART_URI);
+            if (artUri == null) artUri = m.getString(android.media.MediaMetadata.METADATA_KEY_DISPLAY_ICON_URI);
         }
         if (art != null) {
-            mediaArt.setImageBitmap(art);
-        } else {
-            mediaArt.setImageDrawable(null);
+            if (art != mediaArtBmp) setMediaArt(art);
+        } else if (!sameTrack) {
+            setMediaArt(null);
         }
+        if (art == null && mediaArtBmp == null) {
+            android.graphics.Bitmap n = MediaNotifService.largeIconFor(this, pkg);
+            if (n != null) {
+                setMediaArt(n);
+            } else if (artUri != null && !artUri.isEmpty() && !artUri.equals(mediaArtUriTried)) {
+                mediaArtUriTried = artUri;
+                loadMediaArtUri(artUri, key);
+            }
+        }
+
         android.media.session.PlaybackState ps = activeMedia.getPlaybackState();
         boolean playing = ps != null && ps.getState() == android.media.session.PlaybackState.STATE_PLAYING;
         mediaPlay.setText(playing ? "⏸" : "▶");
         // sirf music/video chalda matra dekhaune
         boolean show = playing && prefs.getBoolean("media", false);
         mediaBox.setVisibility(show ? View.VISIBLE : View.GONE);
+        if (show) {
+            updateMediaProgress();
+            startMediaTick();
+        } else {
+            stopMediaTick();
+        }
+    }
+
+    // ----- music line: bajisakyo / baki samay, aafai badhdai-ghatdai jane -----
+    private final Runnable mediaTickRun = new Runnable() {
+        @Override
+        public void run() {
+            updateMediaProgress();
+            if (mediaBox != null && mediaBox.getVisibility() == View.VISIBLE) {
+                mediaTick.postDelayed(this, 500);
+            }
+        }
+    };
+
+    private void startMediaTick() {
+        mediaTick.removeCallbacks(mediaTickRun);
+        mediaTick.postDelayed(mediaTickRun, 500);
+    }
+
+    private void stopMediaTick() {
+        mediaTick.removeCallbacks(mediaTickRun);
+    }
+
+    private void updateMediaProgress() {
+        if (activeMedia == null || mediaSeek == null) return;
+        android.media.session.PlaybackState ps = activeMedia.getPlaybackState();
+        android.media.MediaMetadata m = activeMedia.getMetadata();
+        long dur = m == null ? 0L : m.getLong(android.media.MediaMetadata.METADATA_KEY_DURATION);
+        long pos = 0L;
+        if (ps != null) {
+            pos = ps.getPosition();
+            if (ps.getState() == android.media.session.PlaybackState.STATE_PLAYING) {
+                float sp = ps.getPlaybackSpeed();
+                if (sp == 0f) sp = 1f;
+                long dt = android.os.SystemClock.elapsedRealtime() - ps.getLastPositionUpdateTime();
+                pos += (long) (dt * sp);
+            }
+        }
+        boolean known = dur > 0L;
+        pos = known ? Math.max(0L, Math.min(pos, dur)) : Math.max(0L, pos);
+        mediaDurMs = dur;
+        int max = known ? (int) Math.min(dur, (long) Integer.MAX_VALUE) : 1;
+        if (mediaSeek.getMax() != max) mediaSeek.setMax(max);
+        mediaSeek.setEnabled(known);
+        if (!mediaSeeking) {
+            mediaSeek.setProgress(known ? (int) Math.min(pos, (long) Integer.MAX_VALUE) : 0);
+            mediaElapsed.setText(fmtMediaTime(pos));
+            if (known) {
+                mediaRemain.setText(mediaShowTotal ? fmtMediaTime(dur)
+                    : "-" + fmtMediaTime(Math.max(0L, dur - pos)));
+            } else {
+                mediaRemain.setText("--:--");
+            }
+        }
+    }
+
+    private String fmtMediaTime(long ms) {
+        long s = Math.max(0L, ms) / 1000L;
+        long h = s / 3600L;
+        long min = (s % 3600L) / 60L;
+        long sec = s % 60L;
+        if (h > 0L) return String.format(java.util.Locale.US, "%d:%02d:%02d", h, min, sec);
+        return String.format(java.util.Locale.US, "%d:%02d", min, sec);
+    }
+
+    // ----- art URI (content:// ya https://) background ma load garne -----
+    private void loadMediaArtUri(final String uri, final String key) {
+        new Thread(() -> {
+            android.graphics.Bitmap bmp = null;
+            try {
+                java.io.InputStream in;
+                if (uri.startsWith("http")) {
+                    java.net.HttpURLConnection c =
+                        (java.net.HttpURLConnection) new java.net.URL(uri).openConnection();
+                    c.setConnectTimeout(4000);
+                    c.setReadTimeout(4000);
+                    in = c.getInputStream();
+                } else {
+                    in = getContentResolver().openInputStream(Uri.parse(uri));
+                }
+                if (in != null) {
+                    java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
+                    byte[] buf = new byte[8192];
+                    int n;
+                    int total = 0;
+                    while ((n = in.read(buf)) > 0 && total < 8 * 1024 * 1024) {
+                        bos.write(buf, 0, n);
+                        total += n;
+                    }
+                    in.close();
+                    bmp = decodeSampledArt(bos.toByteArray(), 1024);
+                }
+            } catch (Exception e) {
+                bmp = null;
+            }
+            final android.graphics.Bitmap fb = bmp;
+            if (fb != null) {
+                runOnUiThread(() -> {
+                    if (key.equals(mediaArtKey)) setMediaArt(fb);
+                });
+            }
+        }).start();
+    }
+
+    private android.graphics.Bitmap decodeSampledArt(byte[] data, int maxSide) {
+        android.graphics.BitmapFactory.Options o = new android.graphics.BitmapFactory.Options();
+        o.inJustDecodeBounds = true;
+        android.graphics.BitmapFactory.decodeByteArray(data, 0, data.length, o);
+        int s = 1;
+        while (Math.max(o.outWidth, o.outHeight) / s > maxSide) s *= 2;
+        android.graphics.BitmapFactory.Options o2 = new android.graphics.BitmapFactory.Options();
+        o2.inSampleSize = s;
+        return android.graphics.BitmapFactory.decodeByteArray(data, 0, data.length, o2);
     }
 
     private void toggleMediaPlay() {
