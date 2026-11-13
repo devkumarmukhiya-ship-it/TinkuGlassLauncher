@@ -2740,7 +2740,40 @@ public class MainActivity extends Activity {
             () -> { d.dismiss(); showLockSettings(); });
         addSettingsCard(box, "\uD83C\uDF99", "Tinku voice assistant", "Listen for \"Tinku\", mic",
             () -> { d.dismiss(); showVoiceSettings(); });
+        addSettingsCard(box, "ℹ", "About this app", "Version, features, source",
+            () -> { d.dismiss(); showAbout(); });
         showSettingsSheet(d, box);
+    }
+
+    // ===== About this app: version ra features =====
+    private void showAbout() {
+        String ver = "?";
+        String code = "?";
+        try {
+            android.content.pm.PackageInfo pi = getPackageManager().getPackageInfo(getPackageName(), 0);
+            ver = pi.versionName;
+            code = Build.VERSION.SDK_INT >= 28
+                ? String.valueOf(pi.getLongVersionCode())
+                : String.valueOf(pi.versionCode);
+        } catch (Exception e) {
+            // version padhna sakiyena
+        }
+        String msg = "Tinku Glass Launcher\n\n"
+            + "Version: " + ver + " (build " + code + ")\n"
+            + "Package: " + getPackageName() + "\n\n"
+            + "Features:\n"
+            + "- WELCOME header, time-based greeting\n"
+            + "- Favourites ra Search Now bar\n"
+            + "- Presets: Monochrome, Minimal, Full\n"
+            + "- Music card (play/pause)\n"
+            + "- Drawer folders (Social, Media, Settings...)\n"
+            + "- Charge voice alerts (customizable)\n\n"
+            + "Source: github.com/devkumarmukhiya-ship-it/TinkuGlassLauncher";
+        new android.app.AlertDialog.Builder(this)
+            .setTitle("About this app")
+            .setMessage(msg)
+            .setPositiveButton("OK", null)
+            .show();
     }
 
     private void showThemeSettings() {
