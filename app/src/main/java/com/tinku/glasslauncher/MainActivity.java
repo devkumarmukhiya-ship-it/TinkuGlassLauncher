@@ -2793,17 +2793,8 @@ public class MainActivity extends Activity {
         final Dialog d = new Dialog(this);
         d.requestWindowFeature(Window.FEATURE_NO_TITLE);
         LinearLayout box = settingsBox("Home screen layout", d, true);
-        final String mPos = prefs.getString("media_pos", "top");
-        final String mSide = prefs.getString("media_side", "right");
-        addTapRow(box, "Music card jaga", "Abhi: " + mPos + " (tap garera badlaunus)", () -> {
-            String next = "top".equals(mPos) ? "middle" : ("middle".equals(mPos) ? "bottom" : "top");
-            prefs.edit().putString("media_pos", next).apply();
-            applyMediaPos();
-            d.dismiss();
-            showLayoutSettings();
-        });
-        addTapRow(box, "Music card side", "Abhi: " + mSide + " (tap garera badlaunus)", () -> {
-            prefs.edit().putString("media_side", "left".equals(mSide) ? "right" : "left").apply();
+        addTapRow(box, "Music card reset", "Music card lai default jaga ma farkaaunus (abhi drag garera rakhna milchha)", () -> {
+            prefs.edit().remove("media_tx").remove("media_ty").apply();
             applyMediaPos();
             d.dismiss();
             showLayoutSettings();
@@ -3713,7 +3704,43 @@ public class MainActivity extends Activity {
         mediaPlay.setPadding(0, dp(4), 0, 0);
         mediaBox.addView(mediaPlay);
 
-        mediaBox.setOnClickListener(v -> toggleMediaPlay());
+        // Tanera jaha chahanu chha tyahaan rakhna milchha; saano tap = play/pause
+        mediaBox.setOnTouchListener((v, ev) -> {
+            switch (ev.getActionMasked()) {
+                case android.view.MotionEvent.ACTION_DOWN:
+                    mdX = ev.getRawX();
+                    mdY = ev.getRawY();
+                    mdTx = v.getTranslationX();
+                    mdTy = v.getTranslationY();
+                    mdMoved = false;
+                    return true;
+                case android.view.MotionEvent.ACTION_MOVE: {
+                    float dx = ev.getRawX() - mdX;
+                    float dy = ev.getRawY() - mdY;
+                    if (!mdMoved && Math.abs(dx) + Math.abs(dy) < dp(8)) return true;
+                    mdMoved = true;
+                    float minX = -v.getLeft();
+                    float maxX = rootFrame.getWidth() - v.getRight();
+                    float minY = -v.getTop();
+                    float maxY = rootFrame.getHeight() - v.getBottom();
+                    v.setTranslationX(Math.max(minX, Math.min(maxX, mdTx + dx)));
+                    v.setTranslationY(Math.max(minY, Math.min(maxY, mdTy + dy)));
+                    return true;
+                }
+                case android.view.MotionEvent.ACTION_UP:
+                    if (mdMoved) {
+                        prefs.edit().putFloat("media_tx", v.getTranslationX())
+                            .putFloat("media_ty", v.getTranslationY()).apply();
+                    } else {
+                        toggleMediaPlay();
+                    }
+                    return true;
+                case android.view.MotionEvent.ACTION_CANCEL:
+                    return true;
+                default:
+                    return false;
+            }
+        });
         rootFrame.addView(mediaBox, new FrameLayout.LayoutParams(
             dp(210), ViewGroup.LayoutParams.WRAP_CONTENT));
         applyMediaPos();
@@ -3774,6 +3801,8 @@ public class MainActivity extends Activity {
     }
 
     private boolean mediaSessionListening = false;
+    private float mdX, mdY, mdTx, mdTy;
+    private boolean mdMoved;
 
     /** Naya app ma music suru bhayo bhane pani aafai pakadcha */
     private void registerSessionListener() {
@@ -3811,6 +3840,9 @@ public class MainActivity extends Activity {
             dp(210), ViewGroup.LayoutParams.WRAP_CONTENT, vg | hg);
         lp.setMargins(dp(16), top, dp(16), bottom);
         mediaBox.setLayoutParams(lp);
+        // user le tanera rakheko jaga (drag garesi)
+        mediaBox.setTranslationX(prefs.getFloat("media_tx", 0f));
+        mediaBox.setTranslationY(prefs.getFloat("media_ty", 0f));
     }
 
     private void toggleMediaPlay() {
