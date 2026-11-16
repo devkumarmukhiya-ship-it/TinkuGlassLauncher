@@ -264,6 +264,7 @@ public class MainActivity extends Activity {
         setupV30();
         setupV31();
         setupV32();
+        setupDial();
         setupV34();
         setupAlphabetTouch();
         buildAlphabetBar();
@@ -784,6 +785,7 @@ public class MainActivity extends Activity {
                 if (!prefs.getBoolean("gestures", false)) return false;
                 if (dragMode || isDrawerOpen()) return false;
                 if (searchOverlay.getVisibility() == View.VISIBLE) return false;
+                if (dialView != null && dialView.getVisibility() == View.VISIBLE) return false;
                 if (lockView != null && lockView.getVisibility() == View.VISIBLE) return false;
                 if (e1.getRawX() > getResources().getDisplayMetrics().widthPixels - dp(72)) return false;
                 float dy = e2.getY() - e1.getY();
@@ -3627,11 +3629,83 @@ public class MainActivity extends Activity {
     @Override
     public void onBackPressed() {
         if (lockView != null && lockView.getVisibility() == View.VISIBLE) return;
-        if (searchOverlay.getVisibility() == View.VISIBLE) {
+        if (dialView != null && dialView.getVisibility() == View.VISIBLE) {
+            hideDial();
+        } else if (searchOverlay.getVisibility() == View.VISIBLE) {
             hideSearch();
         } else if (isDrawerOpen()) {
             hideOverlay();
         }
+    }
+
+    // ===== Step 35: dial screen =====
+    private DialView dialView;
+    private View dialButton;
+
+    private void setupDial() {
+        dialView = new DialView(this);
+        dialView.setVisibility(View.GONE);
+        dialView.setListener(new DialView.Listener() {
+            @Override
+            public void onCall(String number) {
+                try {
+                    startActivity(new Intent(Intent.ACTION_DIAL,
+                        Uri.parse("tel:" + Uri.encode(number))));
+                } catch (Exception e) {
+                    Toast.makeText(MainActivity.this, "Dialer not found", Toast.LENGTH_SHORT).show();
+                }
+            }
+
+            @Override
+            public void onClose() {
+                hideDial();
+            }
+        });
+        rootFrame.addView(dialView, new FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+
+        // home ma: search button ko left ma keypad icon (3x3 tipla)
+        dialButton = new View(this) {
+            private final android.graphics.Paint dp = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
+
+            @Override
+            protected void onDraw(android.graphics.Canvas c) {
+                dp.setColor(0xFF222222);
+                float w = getWidth(), h = getHeight();
+                float gap = w * 0.17f;
+                float r = w * 0.055f;
+                for (int i = -1; i <= 1; i++) {
+                    for (int j = -1; j <= 1; j++) {
+                        c.drawCircle(w / 2f + i * gap, h / 2f + j * gap, r, dp);
+                    }
+                }
+            }
+        };
+        GradientDrawable circle = new GradientDrawable();
+        circle.setShape(GradientDrawable.OVAL);
+        circle.setColor(0xB3FFFFFF);
+        dialButton.setBackground(circle);
+        dialButton.setContentDescription("Dial pad");
+        dialButton.setOnClickListener(v -> showDial());
+        FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(dp(56), dp(56),
+            Gravity.BOTTOM | Gravity.RIGHT);
+        lp.rightMargin = dp(84 + 56 + 14);
+        lp.bottomMargin = dp(28);
+        rootFrame.addView(dialButton, lp);
+        if (lockView != null) lockView.bringToFront();
+    }
+
+    private void showDial() {
+        hideOverlay();
+        if (searchOverlay.getVisibility() == View.VISIBLE) hideSearch();
+        dialView.clear();
+        dialView.setVisibility(View.VISIBLE);
+        dialView.bringToFront();
+        if (lockView != null) lockView.bringToFront();
+    }
+
+    private void hideDial() {
+        if (dialView != null) dialView.setVisibility(View.GONE);
     }
 
     // ===== Step 31: WELCOME header, greeting, bottom "Search Now" bar =====
