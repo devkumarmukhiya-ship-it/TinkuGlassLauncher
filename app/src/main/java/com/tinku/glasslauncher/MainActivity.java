@@ -1240,11 +1240,11 @@ public class MainActivity extends Activity {
         box.addView(title);
 
         box.addView(widgetRow("\u25F7", "Clock style", null, true, null,
-            () -> { d.dismiss(); showClockStyles(this::showWidgetSheet); }, null), rowLp());
+            () -> { showClockStyles(this::showWidgetSheet); }, null), rowLp());
         box.addView(widgetRow("\u25A6", "Calendar", "Show upcoming events, Show date", true, null,
-            () -> { d.dismiss(); showCalendarDialog(); }, null), rowLp());
+            () -> { showCalendarDialog(); }, null), rowLp());
         box.addView(widgetRow("\u2600\uFE0E", "Weather", "Location, Temperature units", true, "weather",
-            () -> { d.dismiss(); showWeatherDialog(); },
+            () -> { showWeatherDialog(); },
             () -> {
                 if (prefs.getBoolean("weather", false)) refreshWeather(true);
                 refreshInfoV12();
@@ -1258,9 +1258,9 @@ public class MainActivity extends Activity {
         box.addView(gap, new LinearLayout.LayoutParams(1, dp(12)));
 
         box.addView(widgetRow("\u2606", "Edit favourites", null, true, null,
-            () -> { d.dismiss(); showFavMenu(); }, null), rowLp());
+            () -> { showFavMenu(); }, null), rowLp());
         box.addView(widgetRow("\u2699\uFE0E", "Tinku settings", "Lock screen, voice, glass and more", true, null,
-            () -> { d.dismiss(); showSettingsFrom(this::showWidgetSheet); }, null), rowLp());
+            () -> { showSettingsFrom(this::showWidgetSheet); }, null), rowLp());
 
         View gap2 = new View(this);
         box.addView(gap2, new LinearLayout.LayoutParams(1, dp(12)));
@@ -1435,7 +1435,7 @@ public class MainActivity extends Activity {
                 refreshInfoV12();
             });
         TextView city = makeButton("Change location", 0xFFFFFFFF, 0xFF00695C);
-        city.setOnClickListener(v -> { d.dismiss(); showCityDialog(this::showWeatherDialog); });
+        city.setOnClickListener(v -> { showCityDialog(this::showWeatherDialog); });
         LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         clp.topMargin = dp(14);
@@ -1647,7 +1647,6 @@ public class MainActivity extends Activity {
         reset.setOnClickListener(v -> {
             prefs.edit().remove("lock_cy").remove("lock_dx").remove("lock_scale").remove("lock_by")
                 .remove("lock_bscale").remove("lock_bdx").remove("lock_dscale").remove("lock_ddx").apply();
-            d.dismiss();
             showLockSettings();
         });
         LinearLayout.LayoutParams rlp = new LinearLayout.LayoutParams(
@@ -2690,7 +2689,6 @@ public class MainActivity extends Activity {
         ht.setPadding(0, 0, 0, dp(12));
         if (back) {
             ht.setOnClickListener(v -> {
-                d.dismiss();
                 showSettings();
             });
             backTo(d, this::showSettings);
@@ -2769,17 +2767,17 @@ public class MainActivity extends Activity {
         LinearLayout box = settingsBox("Settings", d, false);
         backTo(d, settingsParent);
         addSettingsCard(box, "\uD83C\uDFA8", "Theme", "Icons, font style, text colour",
-            () -> { d.dismiss(); showThemeSettings(); });
+            () -> { showThemeSettings(); });
         addSettingsCard(box, "\uD83C\uDFE0", "Home screen layout", "Favourites, app list glass, gestures",
-            () -> { d.dismiss(); showLayoutSettings(); });
+            () -> { showLayoutSettings(); });
         addSettingsCard(box, "\uD83D\uDD52", "Date & Clock", "Clock, weather, battery",
-            () -> { d.dismiss(); showDateClockSettings(); });
+            () -> { showDateClockSettings(); });
         addSettingsCard(box, "\uD83D\uDD12", "Lock screen setup", "Timer, position, date, battery",
-            () -> { d.dismiss(); showLockSettings(); });
+            () -> { showLockSettings(); });
         addSettingsCard(box, "\uD83C\uDF99", "Tinku voice assistant", "Listen for \"Tinku\", mic",
-            () -> { d.dismiss(); showVoiceSettings(); });
+            () -> { showVoiceSettings(); });
         addSettingsCard(box, "ℹ", "About this app", "Version, features, source",
-            () -> { d.dismiss(); showAbout(); });
+            () -> { showAbout(); });
         showSettingsSheet(d, box);
     }
 
@@ -2819,16 +2817,16 @@ public class MainActivity extends Activity {
         final Dialog d = new Dialog(this);
         d.requestWindowFeature(Window.FEATURE_NO_TITLE);
         LinearLayout box = settingsBox("Theme", d, true);
-        addTapRow(box, "Presets", "Monochrome, Minimal, Full", () -> { d.dismiss(); showPresets(); });
+        addTapRow(box, "Presets", "Monochrome, Minimal, Full", () -> { showPresets(); });
         addSwitchRow(box, "Monochrome icons", "mono", () -> refreshAll());
-        addTapRow(box, "Font style", FontKit.label(this), () -> { d.dismiss(); showFontPicker(); });
+        addTapRow(box, "Font style", FontKit.label(this), () -> { showFontPicker(); });
         addChoiceRow(box, "Apply font to", "fontscope", "clock",
             new String[] { "clock", "home", "all" },
             new String[] { "Clock only", "Home screen", "Whole launcher" },
             () -> { d.dismiss(); recreate(); });
         addSwitchRow(box, "Dark text on home (light wallpaper)", "darktext", () -> applyTextTone());
         addTapRow(box, "Text colour", "Clock, date, weather, favourites",
-            () -> { d.dismiss(); showColorPicker("Text colour", "home_color", () -> applyTextTone(), this::showThemeSettings); });
+            () -> { showColorPicker("Text colour", "home_color", () -> applyTextTone(), this::showThemeSettings); });
         showSettingsSheet(d, box);
     }
 
@@ -2839,7 +2837,6 @@ public class MainActivity extends Activity {
         addTapRow(box, "Music card reset", "Music card lai default jaga ma farkaaunus (abhi drag garera rakhna milchha)", () -> {
             prefs.edit().remove("media_tx").remove("media_ty").remove("media_w").remove("media_h").apply();
             applyMediaPos();
-            d.dismiss();
             showLayoutSettings();
         });
         addChoiceRow(box, "Favourites layout", "favlayout", "free",
@@ -2893,12 +2890,12 @@ public class MainActivity extends Activity {
         d.requestWindowFeature(Window.FEATURE_NO_TITLE);
         LinearLayout box = settingsBox("Date & Clock", d, true);
         addSwitchRow(box, "Stacked clock (hour over minute)", "stacked", () -> applyClockStyle());
-        addTapRow(box, "Clock style", "Digital and analog styles", () -> { d.dismiss(); showClockStyles(this::showDateClockSettings); });
+        addTapRow(box, "Clock style", "Digital and analog styles", () -> { showClockStyles(this::showDateClockSettings); });
         addSeekRow(box, "Clock opacity", "clk_alpha", 0.15f, 1f, 1f, null);
         addTapRow(box, "Analog clock: number colour", "Auto = follows text colour",
-            () -> { d.dismiss(); showColorPicker("Number colour", "clk_nums", () -> applyAnalogColors(), this::showDateClockSettings); });
+            () -> { showColorPicker("Number colour", "clk_nums", () -> applyAnalogColors(), this::showDateClockSettings); });
         addTapRow(box, "Analog clock: hands colour", "Hour and minute hands",
-            () -> { d.dismiss(); showColorPicker("Hands colour", "clk_hands", () -> applyAnalogColors(), this::showDateClockSettings); });
+            () -> { showColorPicker("Hands colour", "clk_hands", () -> applyAnalogColors(), this::showDateClockSettings); });
         addSwitchRow(box, "Show weather under the date", "weather", () -> {
             refreshInfo();
             refreshWeather(false);
@@ -2911,7 +2908,6 @@ public class MainActivity extends Activity {
         cityRow.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                d.dismiss();
                 showCityDialog(MainActivity.this::showDateClockSettings);
             }
         });
@@ -2936,7 +2932,6 @@ public class MainActivity extends Activity {
             () -> tinkuApplyListen());
         addSwitchRow(box, "Charge voice alerts (charger lagda/hatda ra percent ma bolne)", "charge_sound", () -> {});
         addTapRow(box, "Charge alert settings", "Kun percent ma k bolne, message set garnus", () -> {
-            d.dismiss();
             showChargeEditor();
         });
         showSettingsSheet(d, box);
@@ -4669,12 +4664,10 @@ public class MainActivity extends Activity {
 
         addTapRow(box, "Charger connected message",
             prefs.getString("msg_connect", DEF_CONNECT), () -> {
-                d.dismiss();
                 showTextEditor("Charger connected message", "msg_connect", DEF_CONNECT);
             });
         addTapRow(box, "Charger disconnected message",
             prefs.getString("msg_disconnect", DEF_DISCONNECT), () -> {
-                d.dismiss();
                 showTextEditor("Charger disconnected message", "msg_disconnect", DEF_DISCONNECT);
             });
 
@@ -4684,12 +4677,10 @@ public class MainActivity extends Activity {
             String[] r = rules.get(i);
             String title = ("D".equals(r[0]) ? "Low " : "Charging ") + r[1] + "%";
             addTapRow(box, title, r[2], () -> {
-                d.dismiss();
                 showRuleEditor(idx);
             });
         }
         addTapRow(box, "+ Naya alert", "Percent ra message aafai banaunus", () -> {
-            d.dismiss();
             showRuleEditor(-1);
         });
         addTapRow(box, "Default ma farkaaunus", "Sabai alert ra message reset", () -> {
