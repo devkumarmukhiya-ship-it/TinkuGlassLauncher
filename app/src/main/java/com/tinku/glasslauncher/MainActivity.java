@@ -2871,6 +2871,14 @@ public class MainActivity extends Activity {
         addSwitchRow(box, "Swipe gestures (down = notifications, up = search)", "gestures", () -> {});
         addSwitchRow(box, "Bottom tab bar (Home, Calendar, Music, Weather)", "navbar", () -> applyTabBar());
         addSwitchRow(box, "Side button (right side ma tap = menu)", "sidebtn", () -> applySideBtn());
+        addChoiceRow(box, "Side button tap", "side_tap", "menu",
+            new String[] { "menu", "search", "calendar", "music", "weather", "settings", "none" },
+            new String[] { "Menu", "Search", "Calendar", "Music", "Weather", "Settings", "Kehi chhaina" },
+            () -> {});
+        addChoiceRow(box, "Side button swipe up", "side_swipe", "none",
+            new String[] { "menu", "search", "calendar", "music", "weather", "settings", "none" },
+            new String[] { "Menu", "Search", "Calendar", "Music", "Weather", "Settings", "Kehi chhaina" },
+            () -> {});
         addSeekRow(box, "Line thickness (page line ra side button)", "line_w", 1f, 6f, 2f, () -> applyLineStyle());
 
         boolean blurOk = false;
@@ -4518,12 +4526,55 @@ public class MainActivity extends Activity {
         sideBtn.setTextColor(0xFFFFFFFF);
         sideBtn.setTextSize(14);
         sideBtn.setBackground(sidePill);
-        sideBtn.setOnClickListener(v -> showSideMenu(v));
+        // tap = side_tap action (menu ya kunai), upar swipe = side_swipe action
+        sideBtn.setOnTouchListener(new View.OnTouchListener() {
+            private final android.view.GestureDetector sg = new android.view.GestureDetector(MainActivity.this,
+                new android.view.GestureDetector.SimpleOnGestureListener() {
+                    @Override
+                    public boolean onDown(MotionEvent e) { return true; }
+
+                    @Override
+                    public boolean onSingleTapUp(MotionEvent e) {
+                        String a = prefs.getString("side_tap", "menu");
+                        if ("menu".equals(a)) showSideMenu(sideBtn);
+                        else runSideAction(a);
+                        return true;
+                    }
+
+                    @Override
+                    public boolean onFling(MotionEvent e1, MotionEvent e2, float vx, float vy) {
+                        if (e1 == null || e2 == null) return false;
+                        if (e1.getY() - e2.getY() > dp(30)) {
+                            runSideAction(prefs.getString("side_swipe", "none"));
+                            return true;
+                        }
+                        return false;
+                    }
+                });
+
+            @Override
+            public boolean onTouch(View v, MotionEvent e) {
+                return sg.onTouchEvent(e);
+            }
+        });
         FrameLayout.LayoutParams slp = new FrameLayout.LayoutParams(
             dp(28), dp(96), Gravity.RIGHT | Gravity.CENTER_VERTICAL);
         rootFrame.addView(sideBtn, at, slp);
         applySideBtn();
         applyLineStyle();
+    }
+
+    /** Side button ko action: menu ko lagi alag, baki yeha bata chalchha */
+    private void runSideAction(String a) {
+        if (a == null) return;
+        switch (a) {
+            case "search": showSearch(); break;
+            case "calendar": openPage(0); break;
+            case "music": openMusicPage(); break;
+            case "weather": openPage(2); break;
+            case "settings": showSettings(); break;
+            default: break;
+        }
     }
 
     private void applySideBtn() {
@@ -4629,6 +4680,17 @@ public class MainActivity extends Activity {
 
         pageHost.addView(col, new FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+
+        if (!pageOpen) {
+            // page-turn ko jasto: kinaara ma gaadho chhaya ra bistarai gayera gaayab
+            View fold = new View(this);
+            GradientDrawable fg = new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,
+                new int[] { 0xCC000000, 0x00000000 });
+            fold.setBackground(fg);
+            pageHost.addView(fold, new FrameLayout.LayoutParams(dp(90), FrameLayout.LayoutParams.MATCH_PARENT,
+                Gravity.LEFT));
+            fold.animate().alpha(0f).setDuration(320).withEndAction(() -> pageHost.removeView(fold)).start();
+        }
 
         if (idx == 0) fillCalendarPage();
         else if (idx == 1) fillMusicPage();
