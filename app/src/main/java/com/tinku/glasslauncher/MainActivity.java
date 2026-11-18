@@ -266,6 +266,7 @@ public class MainActivity extends Activity {
         setupV32();
         setupV34();
         setupV35();
+        setupV36();
         setupAlphabetTouch();
         buildAlphabetBar();
         applyClockStyle();
@@ -2869,6 +2870,8 @@ public class MainActivity extends Activity {
             () -> {});
         addSwitchRow(box, "Swipe gestures (down = notifications, up = search)", "gestures", () -> {});
         addSwitchRow(box, "Bottom tab bar (Home, Calendar, Music, Weather)", "navbar", () -> applyTabBar());
+        addSwitchRow(box, "Side button (right side ma tap = menu)", "sidebtn", () -> applySideBtn());
+        addSeekRow(box, "Line thickness (page line ra side button)", "line_w", 1f, 6f, 2f, () -> applyLineStyle());
 
         boolean blurOk = false;
         if (Build.VERSION.SDK_INT >= 31) {
@@ -3624,6 +3627,10 @@ public class MainActivity extends Activity {
     @Override
     public void onBackPressed() {
         if (lockView != null && lockView.getVisibility() == View.VISIBLE) return;
+        if (pageOpen) {
+            closePage();
+            return;
+        }
         if (searchOverlay.getVisibility() == View.VISIBLE) {
             hideSearch();
         } else if (isDrawerOpen()) {
@@ -4477,6 +4484,351 @@ public class MainActivity extends Activity {
     private final HashSet<String> chargeFired = new HashSet<String>();
     private boolean chargeFirstRun = true;
 
+    // ===== Step 36: full-screen pages (Calendar, Music, Weather), side button, line thickness =====
+    private FrameLayout pageHost;
+    private LinearLayout pageBody;
+    private boolean pageOpen = false;
+    private int curPage = -1;
+    private TextView sideBtn;
+    private GradientDrawable sidePill;
+    private View pageLine;
+    private TextView pageTitleTv, pageArtistTv, pagePlayTv;
+    private ImageView pageVinyl;
+    private android.animation.ObjectAnimator vinylSpin;
+    private final android.os.Handler pageTick = new android.os.Handler(android.os.Looper.getMainLooper());
+    private Runnable pageTickRun;
+
+    private void setupV36() {
+        pageHost = new FrameLayout(this);
+        pageHost.setBackgroundColor(0xFF000000);
+        pageHost.setClickable(true);
+        pageHost.setVisibility(View.GONE);
+        // search overlay ko talaa rakhne: overlay sabai bhanda mathi rahos
+        int at = Math.max(0, rootFrame.indexOfChild(searchOverlay));
+        rootFrame.addView(pageHost, at, new FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+
+        sidePill = new GradientDrawable();
+        sidePill.setShape(GradientDrawable.RECTANGLE);
+        sidePill.setCornerRadius(dp(12));
+        sidePill.setColor(0x66000000);
+        sideBtn = new TextView(this);
+        sideBtn.setText("☰");
+        sideBtn.setGravity(Gravity.CENTER);
+        sideBtn.setTextColor(0xFFFFFFFF);
+        sideBtn.setTextSize(14);
+        sideBtn.setBackground(sidePill);
+        sideBtn.setOnClickListener(v -> showSideMenu(v));
+        FrameLayout.LayoutParams slp = new FrameLayout.LayoutParams(
+            dp(28), dp(96), Gravity.RIGHT | Gravity.CENTER_VERTICAL);
+        rootFrame.addView(sideBtn, at, slp);
+        applySideBtn();
+        applyLineStyle();
+    }
+
+    private void applySideBtn() {
+        if (sideBtn != null) sideBtn.setVisibility(prefs.getBoolean("sidebtn", false) ? View.VISIBLE : View.GONE);
+    }
+
+    private int lineW() {
+        return Math.max(1, Math.round(prefs.getFloat("line_w", 2f)));
+    }
+
+    private void applyLineStyle() {
+        if (sidePill != null) sidePill.setStroke(dp(lineW()), 0xFFFFFFFF);
+    }
+
+    private int screenWidth() {
+        return getResources().getDisplayMetrics().widthPixels;
+    }
+
+    private void showSideMenu(View anchor) {
+        android.widget.PopupMenu pm = new android.widget.PopupMenu(this, anchor);
+        pm.getMenu().add(0, 1, 0, "Search");
+        pm.getMenu().add(0, 2, 1, "Calendar");
+        pm.getMenu().add(0, 3, 2, "Music");
+        pm.getMenu().add(0, 4, 3, "Weather");
+        pm.getMenu().add(0, 5, 4, "Settings");
+        pm.setOnMenuItemClickListener(item -> {
+            switch (item.getItemId()) {
+                case 1: showSearch(); break;
+                case 2: openPage(0); break;
+                case 3: openMusicPage(); break;
+                case 4: openPage(2); break;
+                case 5: showSettings(); break;
+            }
+            return true;
+        });
+        pm.show();
+    }
+
+    private TextView pageText(String s, float sp, boolean bold) {
+        TextView t = new TextView(this);
+        t.setText(s);
+        t.setTextColor(0xFFFFFFFF);
+        t.setTextSize(sp);
+        if (bold) t.setTypeface(null, android.graphics.Typeface.BOLD);
+        t.setPadding(0, dp(6), 0, dp(6));
+        return t;
+    }
+
+    private TextView ctrlBtn(String s, View.OnClickListener l) {
+        TextView t = pageText(s, 30, false);
+        t.setGravity(Gravity.CENTER);
+        t.setPadding(dp(24), dp(8), dp(24), dp(8));
+        t.setOnClickListener(l);
+        return t;
+    }
+
+    private void openMusicPage() {
+        if (!hasNotifAccess()) {
+            startActivity(new Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS"));
+            return;
+        }
+        openPage(1);
+    }
+
+    /** idx: 0 = Calendar, 1 = Music, 2 = Weather. Page right bata slide garera aaucha. */
+    private void openPage(int idx) {
+        pageHost.animate().cancel();
+        stopPageTick();
+        curPage = idx;
+        pageHost.removeAllViews();
+        pageTitleTv = null;
+        pageArtistTv = null;
+        pagePlayTv = null;
+        pageVinyl = null;
+
+        LinearLayout col = new LinearLayout(this);
+        col.setOrientation(LinearLayout.VERTICAL);
+        col.setPadding(dp(20), dp(44), dp(20), dp(16));
+        col.setBackgroundColor(0xFF000000);
+
+        LinearLayout head = new LinearLayout(this);
+        head.setOrientation(LinearLayout.HORIZONTAL);
+        head.setGravity(Gravity.CENTER_VERTICAL);
+        TextView back = pageText("← BACK", 14, true);
+        back.setOnClickListener(v -> closePage());
+        head.addView(back);
+        TextView title = pageText(new String[] { "CALENDAR", "MUSIC", "WEATHER" }[idx], 20, true);
+        title.setGravity(Gravity.RIGHT);
+        head.addView(title, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+        col.addView(head);
+
+        pageLine = new View(this);
+        pageLine.setBackgroundColor(0xFFFFFFFF);
+        col.addView(pageLine, new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, dp(lineW())));
+
+        ScrollView sv = new ScrollView(this);
+        pageBody = new LinearLayout(this);
+        pageBody.setOrientation(LinearLayout.VERTICAL);
+        pageBody.setPadding(0, dp(16), 0, dp(16));
+        sv.addView(pageBody);
+        col.addView(sv, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
+
+        pageHost.addView(col, new FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+
+        if (idx == 0) fillCalendarPage();
+        else if (idx == 1) fillMusicPage();
+        else fillWeatherPage();
+
+        if (!pageOpen) {
+            pageHost.setTranslationX(screenWidth());
+            pageHost.setVisibility(View.VISIBLE);
+            pageHost.animate().translationX(0f).setDuration(260).start();
+        }
+        pageOpen = true;
+    }
+
+    private void closePage() {
+        if (!pageOpen) return;
+        pageOpen = false;
+        curPage = -1;
+        stopPageTick();
+        pageHost.animate().translationX(screenWidth()).setDuration(220).withEndAction(() -> {
+            if (!pageOpen) {
+                pageHost.setVisibility(View.GONE);
+                pageHost.removeAllViews();
+            }
+        }).start();
+    }
+
+    private void fillCalendarPage() {
+        String today = new java.text.SimpleDateFormat("EEEE, d MMMM yyyy", java.util.Locale.ENGLISH)
+            .format(new java.util.Date());
+        pageBody.addView(pageText(today, 16, false));
+        if (checkSelfPermission("android.permission.READ_CALENDAR")
+            != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            pageBody.addView(pageText("Calendar permission chhaina.", 15, false));
+            TextView b = pageText("Permission dinus", 15, true);
+            b.setOnClickListener(v -> ensureCalendarPermission());
+            pageBody.addView(b);
+            return;
+        }
+        java.util.List<String> ev = upcomingEvents();
+        if (ev.isEmpty()) {
+            pageBody.addView(pageText("Agami 7 din ma koi event chhaina", 15, false));
+            return;
+        }
+        for (String s : ev) pageBody.addView(pageText(s, 16, false));
+    }
+
+    /** Agami 7 din ko event list (purano event chhodera) */
+    private java.util.List<String> upcomingEvents() {
+        java.util.List<String> out = new java.util.ArrayList<>();
+        android.database.Cursor c = null;
+        try {
+            long now = System.currentTimeMillis();
+            android.net.Uri.Builder ub = android.provider.CalendarContract.Instances.CONTENT_URI.buildUpon();
+            android.content.ContentUris.appendId(ub, now);
+            android.content.ContentUris.appendId(ub, now + 7L * 24L * 3600L * 1000L);
+            c = getContentResolver().query(ub.build(),
+                new String[] {
+                    android.provider.CalendarContract.Instances.TITLE,
+                    android.provider.CalendarContract.Instances.BEGIN,
+                    android.provider.CalendarContract.Instances.ALL_DAY },
+                null, null, android.provider.CalendarContract.Instances.BEGIN + " ASC");
+            while (c != null && c.moveToNext()) {
+                String title = c.getString(0);
+                long begin = c.getLong(1);
+                boolean allDay = c.getInt(2) == 1;
+                if (title == null || title.length() == 0) continue;
+                if (!allDay && begin < now - 30L * 60L * 1000L) continue;
+                String when = allDay ? "ALL DAY"
+                    : new java.text.SimpleDateFormat("EEE d MMM, h:mm a", java.util.Locale.ENGLISH)
+                        .format(new java.util.Date(begin));
+                out.add(when + "\n" + title);
+                if (out.size() >= 25) break;
+            }
+        } catch (Exception e) {
+            // calendar padhna sakiena
+        } finally {
+            if (c != null) c.close();
+        }
+        return out;
+    }
+
+    private void fillMusicPage() {
+        pageVinyl = new ImageView(this);
+        GradientDrawable disc = new GradientDrawable();
+        disc.setShape(GradientDrawable.OVAL);
+        disc.setColor(0xFF111111);
+        disc.setStroke(dp(6), 0xFF000000);
+        pageVinyl.setBackground(disc);
+        pageVinyl.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        pageVinyl.setOutlineProvider(android.view.ViewOutlineProvider.BACKGROUND);
+        pageVinyl.setClipToOutline(true);
+        LinearLayout.LayoutParams vlp = new LinearLayout.LayoutParams(dp(240), dp(240));
+        vlp.gravity = Gravity.CENTER_HORIZONTAL;
+        vlp.topMargin = dp(12);
+        vlp.bottomMargin = dp(20);
+        pageBody.addView(pageVinyl, vlp);
+
+        pageTitleTv = pageText("Music", 20, true);
+        pageTitleTv.setGravity(Gravity.CENTER_HORIZONTAL);
+        pageBody.addView(pageTitleTv);
+        pageArtistTv = pageText("", 15, false);
+        pageArtistTv.setGravity(Gravity.CENTER_HORIZONTAL);
+        pageBody.addView(pageArtistTv);
+
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER);
+        row.addView(ctrlBtn("⏮", v -> skipMedia(-1)));
+        pagePlayTv = ctrlBtn("▶", v -> toggleMediaPlay());
+        row.addView(pagePlayTv);
+        row.addView(ctrlBtn("⏭", v -> skipMedia(1)));
+        LinearLayout.LayoutParams rlp = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        rlp.gravity = Gravity.CENTER_HORIZONTAL;
+        rlp.topMargin = dp(12);
+        pageBody.addView(row, rlp);
+
+        startPageTick();
+    }
+
+    private void skipMedia(int dir) {
+        if (activeMedia == null) return;
+        if (dir < 0) activeMedia.getTransportControls().skipToPrevious();
+        else activeMedia.getTransportControls().skipToNext();
+    }
+
+    private void startPageTick() {
+        if (pageTickRun == null) {
+            pageTickRun = new Runnable() {
+                @Override
+                public void run() {
+                    refreshMusicPage();
+                    if (curPage == 1) pageTick.postDelayed(this, 700);
+                }
+            };
+        }
+        pageTick.removeCallbacks(pageTickRun);
+        pageTick.post(pageTickRun);
+    }
+
+    private void stopPageTick() {
+        if (pageTickRun != null) pageTick.removeCallbacks(pageTickRun);
+        if (vinylSpin != null) vinylSpin.cancel();
+        vinylSpin = null;
+    }
+
+    private void refreshMusicPage() {
+        if (pageTitleTv == null) return;
+        String t = "Music chalirahekochha ina";
+        String a = "";
+        boolean playing = false;
+        if (activeMedia != null) {
+            t = "Music";
+            android.media.MediaMetadata m = activeMedia.getMetadata();
+            CharSequence ct = m == null ? null : m.getText(android.media.MediaMetadata.METADATA_KEY_TITLE);
+            CharSequence ca = m == null ? null : m.getText(android.media.MediaMetadata.METADATA_KEY_ARTIST);
+            if (ct != null) t = ct.toString();
+            if (ca != null) a = ca.toString();
+            android.media.session.PlaybackState ps = activeMedia.getPlaybackState();
+            playing = ps != null && ps.getState() == android.media.session.PlaybackState.STATE_PLAYING;
+            if (mediaArt != null && pageVinyl != null && pageVinyl.getDrawable() != mediaArt.getDrawable()) {
+                pageVinyl.setImageDrawable(mediaArt.getDrawable());
+            }
+        }
+        pageTitleTv.setText(t);
+        pageArtistTv.setText(a);
+        pagePlayTv.setText(playing ? "⏸" : "▶");
+        if (pageVinyl != null) {
+            if (playing && vinylSpin == null) {
+                vinylSpin = android.animation.ObjectAnimator.ofFloat(pageVinyl, View.ROTATION, 0f, 360f);
+                vinylSpin.setDuration(8000);
+                vinylSpin.setRepeatCount(android.animation.ValueAnimator.INFINITE);
+                vinylSpin.setInterpolator(new android.view.animation.LinearInterpolator());
+                vinylSpin.start();
+            } else if (!playing && vinylSpin != null) {
+                vinylSpin.cancel();
+                vinylSpin = null;
+            }
+        }
+    }
+
+    private void fillWeatherPage() {
+        if (!prefs.getBoolean("weather", false)) {
+            pageBody.addView(pageText("Weather band chha. Settings ma on garnus.", 16, false));
+        } else {
+            String t = prefs.getString("wtext", null);
+            pageBody.addView(pageText(t != null ? t : "Weather load bhairahecha chha...", 22, true));
+        }
+        pageBody.addView(pageText("Location: " + prefs.getString("wcity", "Kathmandu"), 15, false));
+        TextView refresh = pageText("Refresh", 15, true);
+        refresh.setOnClickListener(v -> {
+            refreshWeather(true);
+            pageTick.postDelayed(() -> { if (curPage == 2) openPage(2); }, 2000);
+        });
+        pageBody.addView(refresh);
+        TextView loc = pageText("Change location", 15, true);
+        loc.setOnClickListener(v -> showCityDialog(() -> openPage(2)));
+        pageBody.addView(loc);
+    }
+
     // ===== Step 35: bottom tab bar (Home / Calendar / Music / Weather) =====
     private LinearLayout tabBar;
 
@@ -4516,23 +4868,18 @@ public class MainActivity extends Activity {
 
     private void tabTapped(int idx) {
         switch (idx) {
-            case 0: // Home: search khulyo bhane band
+            case 0: // Home: page ra search khulyo bhane band
+                closePage();
                 if (searchOverlay.getVisibility() == View.VISIBLE) hideSearch();
                 break;
             case 1:
-                showCalendarDialog();
+                openPage(0);
                 break;
             case 2: // Music: notification access chhaina bhane settings, chalirahechha bhane play/pause
-                if (!hasNotifAccess()) {
-                    startActivity(new Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS"));
-                } else if (activeMedia != null) {
-                    toggleMediaPlay();
-                } else {
-                    Toast.makeText(this, "Music chalirahekochha ina", Toast.LENGTH_SHORT).show();
-                }
+                openMusicPage();
                 break;
             case 3:
-                showWeatherDialog();
+                openPage(2);
                 break;
         }
     }
@@ -4843,6 +5190,7 @@ public class MainActivity extends Activity {
         }
         // layout pani preset sanga: favourites vertical, sabai kura left
         ed.putBoolean("navbar", "chris".equals(name));
+        ed.putBoolean("sidebtn", "niagara".equals(name));
         ed.putString("favlayout", "minimal".equals(name) ? "free" : "vertical")
           .putString("favalign", "left")
           .putString("align", "left");
