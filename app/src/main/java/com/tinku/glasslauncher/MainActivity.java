@@ -4772,6 +4772,14 @@ public class MainActivity extends Activity {
             d.dismiss();
             applyPreset("full");
         });
+        addTapRow(box, "Niagara", "Dark wallpaper, clock, weather, alphabet drawer, gestures", () -> {
+            d.dismiss();
+            applyPreset("niagara");
+        });
+        addTapRow(box, "Chris UG", "Greeting, calendar, music, folders, charge alerts", () -> {
+            d.dismiss();
+            applyPreset("chris");
+        });
         backTo(d, this::showThemeSettings);
         showBottom(d, box);
     }
@@ -4792,6 +4800,42 @@ public class MainActivity extends Activity {
               .putBoolean("media", false)
               .putBoolean("folders", false)
               .putBoolean("charge_sound", false);
+        } else if ("niagara".equals(name)) {
+            // Video 1 (Minimal Niagara): clock + favourites + weather, alphabet drawer, gestures
+            ed.putBoolean("showtop", true)
+              .putBoolean("showbottom", true)
+              .putBoolean("weather", true)
+              .putBoolean("showbat", false)
+              .putBoolean("events", false)
+              .putBoolean("stacked", true)
+              .putBoolean("darktext", false)
+              .putString("glass", "dark")
+              .putInt("home_color", 0)
+              .putBoolean("welcome", false)
+              .putBoolean("greeting", false)
+              .putBoolean("searchbar", false)
+              .putBoolean("media", false)
+              .putBoolean("folders", false)
+              .putBoolean("charge_sound", false)
+              .putBoolean("gestures", true);
+        } else if ("chris".equals(name)) {
+            // Video 2 (Chris UG): greeting + name, calendar, music, folder drawer, charge voice
+            ed.putBoolean("showtop", true)
+              .putBoolean("showbottom", true)
+              .putBoolean("weather", true)
+              .putBoolean("showbat", true)
+              .putBoolean("events", true)
+              .putBoolean("stacked", true)
+              .putBoolean("darktext", false)
+              .putString("glass", "dark")
+              .putInt("home_color", 0xFFFFFFFF)
+              .putBoolean("welcome", true)
+              .putBoolean("greeting", true)
+              .putBoolean("searchbar", true)
+              .putBoolean("media", true)
+              .putBoolean("folders", true)
+              .putBoolean("charge_sound", true)
+              .putBoolean("gestures", true);
         } else {
             ed.putBoolean("showtop", true)
               .putBoolean("showbottom", true)
