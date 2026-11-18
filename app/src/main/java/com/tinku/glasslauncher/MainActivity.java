@@ -265,6 +265,7 @@ public class MainActivity extends Activity {
         setupV31();
         setupV32();
         setupV34();
+        setupV35();
         setupAlphabetTouch();
         buildAlphabetBar();
         applyClockStyle();
@@ -2867,6 +2868,7 @@ public class MainActivity extends Activity {
             new String[] { "Soft", "Medium", "Strong" },
             () -> {});
         addSwitchRow(box, "Swipe gestures (down = notifications, up = search)", "gestures", () -> {});
+        addSwitchRow(box, "Bottom tab bar (Home, Calendar, Music, Weather)", "navbar", () -> applyTabBar());
 
         boolean blurOk = false;
         if (Build.VERSION.SDK_INT >= 31) {
@@ -4475,6 +4477,66 @@ public class MainActivity extends Activity {
     private final HashSet<String> chargeFired = new HashSet<String>();
     private boolean chargeFirstRun = true;
 
+    // ===== Step 35: bottom tab bar (Home / Calendar / Music / Weather) =====
+    private LinearLayout tabBar;
+
+    private void setupV35() {
+        tabBar = new LinearLayout(this);
+        tabBar.setOrientation(LinearLayout.HORIZONTAL);
+        tabBar.setGravity(Gravity.CENTER);
+        tabBar.setBackgroundColor(0xE6000000);
+        tabBar.setPadding(0, dp(6), 0, dp(6));
+        String[][] tabs = {
+            {"⌂", "Home"}, {"▦", "Calendar"}, {"♫", "Music"}, {"☁", "Weather"}
+        };
+        for (int i = 0; i < tabs.length; i++) {
+            final int idx = i;
+            TextView tv = new TextView(this);
+            tv.setText(tabs[i][0] + "\n" + tabs[i][1]);
+            tv.setGravity(Gravity.CENTER);
+            tv.setTextColor(0xFFFFFFFF);
+            tv.setTextSize(11);
+            tv.setPadding(0, dp(4), 0, dp(4));
+            tv.setLayoutParams(new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+            tv.setOnClickListener(v -> tabTapped(idx));
+            tabBar.addView(tv);
+        }
+        FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM);
+        lp.rightMargin = dp(72); // search button ko lagi thau chhodne
+        // search overlay mathi rakhne (overlay le tab bar lukaos)
+        rootFrame.addView(tabBar, Math.max(0, rootFrame.indexOfChild(searchOverlay)), lp);
+        applyTabBar();
+    }
+
+    private void applyTabBar() {
+        if (tabBar == null) return;
+        tabBar.setVisibility(prefs.getBoolean("navbar", false) ? View.VISIBLE : View.GONE);
+    }
+
+    private void tabTapped(int idx) {
+        switch (idx) {
+            case 0: // Home: search khulyo bhane band
+                if (searchOverlay.getVisibility() == View.VISIBLE) hideSearch();
+                break;
+            case 1:
+                showCalendarDialog();
+                break;
+            case 2: // Music: notification access chhaina bhane settings, chalirahechha bhane play/pause
+                if (!hasNotifAccess()) {
+                    startActivity(new Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS"));
+                } else if (activeMedia != null) {
+                    toggleMediaPlay();
+                } else {
+                    Toast.makeText(this, "Music chalirahekochha ina", Toast.LENGTH_SHORT).show();
+                }
+                break;
+            case 3:
+                showWeatherDialog();
+                break;
+        }
+    }
+
     private void setupV34() {
         chargeReceiver = new BroadcastReceiver() {
             @Override
@@ -4780,6 +4842,7 @@ public class MainActivity extends Activity {
               .putBoolean("charge_sound", true);
         }
         // layout pani preset sanga: favourites vertical, sabai kura left
+        ed.putBoolean("navbar", "chris".equals(name));
         ed.putString("favlayout", "minimal".equals(name) ? "free" : "vertical")
           .putString("favalign", "left")
           .putString("align", "left");
