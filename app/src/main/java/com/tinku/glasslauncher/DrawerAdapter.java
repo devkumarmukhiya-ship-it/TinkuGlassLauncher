@@ -123,6 +123,20 @@ public class DrawerAdapter extends BaseAdapter {
         name.setText(AppAdapter.labelOf(context, row.app));
         name.setTextColor(AppAdapter.tone(context));
         icon.setImageDrawable(AppAdapter.iconOf(context, row.app));
+        // Drawer ma app ko beech line (Settings > Drawer ma line on bhayo bhane matra)
+        android.content.SharedPreferences sp = context.getSharedPreferences("tinku", Context.MODE_PRIVATE);
+        if (sp.getBoolean("drawer_lines", false)) {
+            int px = Math.max(1, Math.round(sp.getFloat("line_w", 2f) * dn));
+            android.graphics.drawable.ColorDrawable line = new android.graphics.drawable.ColorDrawable(
+                (AppAdapter.tone(context) & 0x00FFFFFF) | 0x33000000);
+            android.graphics.drawable.LayerDrawable ld = new android.graphics.drawable.LayerDrawable(
+                new android.graphics.drawable.Drawable[] { new android.graphics.drawable.ColorDrawable(0), line });
+            ld.setLayerHeight(1, px);
+            ld.setLayerGravity(1, Gravity.BOTTOM);
+            convertView.setBackground(ld);
+        } else {
+            convertView.setBackground(null);
+        }
         return convertView;
     }
 }

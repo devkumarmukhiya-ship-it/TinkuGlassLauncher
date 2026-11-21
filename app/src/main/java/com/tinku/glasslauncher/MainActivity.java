@@ -2871,6 +2871,7 @@ public class MainActivity extends Activity {
         addSwitchRow(box, "Swipe gestures (down = notifications, up = search)", "gestures", () -> {});
         addSwitchRow(box, "Bottom tab bar (Home, Calendar, Music, Weather)", "navbar", () -> applyTabBar());
         addSwitchRow(box, "Side button (right side ma tap = menu)", "sidebtn", () -> applySideBtn());
+        addSwitchRow(box, "Drawer ma line (app ko beech)", "drawer_lines", () -> {});
         addChoiceRow(box, "Side button tap", "side_tap", "menu",
             new String[] { "menu", "search", "calendar", "music", "weather", "settings", "none" },
             new String[] { "Menu", "Search", "Calendar", "Music", "Weather", "Settings", "Kehi chhaina" },
@@ -4786,7 +4787,17 @@ public class MainActivity extends Activity {
         vlp.gravity = Gravity.CENTER_HORIZONTAL;
         vlp.topMargin = dp(12);
         vlp.bottomMargin = dp(20);
-        pageBody.addView(pageVinyl, vlp);
+        // vinyl ko center ma kalo hole (label) matra, record ghumne ma hole sthir rahanchha
+        FrameLayout holder = new FrameLayout(this);
+        holder.addView(pageVinyl, new FrameLayout.LayoutParams(dp(240), dp(240)));
+        View hole = new View(this);
+        GradientDrawable holeBg = new GradientDrawable();
+        holeBg.setShape(GradientDrawable.OVAL);
+        holeBg.setColor(0xFF000000);
+        holeBg.setStroke(dp(2), 0xFF777777);
+        hole.setBackground(holeBg);
+        holder.addView(hole, new FrameLayout.LayoutParams(dp(44), dp(44), Gravity.CENTER));
+        pageBody.addView(holder, vlp);
 
         pageTitleTv = pageText("Music", 20, true);
         pageTitleTv.setGravity(Gravity.CENTER_HORIZONTAL);
