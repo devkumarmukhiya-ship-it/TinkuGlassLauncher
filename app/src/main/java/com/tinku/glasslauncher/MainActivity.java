@@ -4698,9 +4698,15 @@ public class MainActivity extends Activity {
         else fillWeatherPage();
 
         if (!pageOpen) {
-            pageHost.setTranslationX(screenWidth());
+            // Page turn: page right kinaarabata kitab ko pannaa jastai ghumera aaucha
             pageHost.setVisibility(View.VISIBLE);
-            pageHost.animate().translationX(0f).setDuration(260).start();
+            pageHost.setTranslationX(0f);
+            pageHost.setPivotX(screenWidth());
+            pageHost.setPivotY(getResources().getDisplayMetrics().heightPixels / 2f);
+            pageHost.setCameraDistance(dp(12000));
+            pageHost.setRotationY(80f);
+            pageHost.setAlpha(0.4f);
+            pageHost.animate().rotationY(0f).alpha(1f).setDuration(420).start();
         }
         pageOpen = true;
     }
@@ -4710,7 +4716,8 @@ public class MainActivity extends Activity {
         pageOpen = false;
         curPage = -1;
         stopPageTick();
-        pageHost.animate().translationX(screenWidth()).setDuration(220).withEndAction(() -> {
+        pageHost.setPivotX(screenWidth());
+        pageHost.animate().rotationY(80f).alpha(0.4f).setDuration(340).withEndAction(() -> {
             if (!pageOpen) {
                 pageHost.setVisibility(View.GONE);
                 pageHost.removeAllViews();
